@@ -1,43 +1,48 @@
 #!/bin/bash
 
 DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-source "${DIR}/../../main/index.sh"
+source "${DIR}/../../main/tools/version.sh"
+
+before_each() {
+  ORIG_DIR="$(pwd)"
+  mkdir -p .tmp-version-dir
+  cd .tmp-version-dir || exit 2
+}
+
+after_each() {
+  cd "$ORIG_DIR" || exit 2
+  rm -rf .tmp-version-dir
+}
 
 test_version_get_success() {
   echo "1.2.3" > .tmp-version
   expect "$(version.get .tmp-version)" to.equal "1.2.3"
-  rm .tmp-version
 }
 
 test_version_get_default_file() {
   echo "0.9.1" > VERSION
   expect "$(version.get)" to.equal "0.9.1"
-  rm VERSION
 }
 
 test_version_get_invalid_format() {
   echo "v1.2" > .tmp-version
   expect.run "version.get .tmp-version" to.fail.with 2 "Invalid version format"
-  rm .tmp-version
 }
 
 test_version_get_missing_file() {
-  rm -f .tmp-missing
-  expect.run "version.get .tmp-missing" to.fail.with 2 "Version file not found"
+  expect.run "version.get .missing" to.fail.with 2 "Version file not found"
 }
 
 test_version_set_and_get() {
   version.set "2.4.6" .tmp-version
   expect "$(cat .tmp-version)" to.equal "2.4.6"
   expect "$(version.get .tmp-version)" to.equal "2.4.6"
-  rm .tmp-version
 }
 
 test_version_set_default_file() {
   version.set "3.3.3"
   expect "$(cat VERSION)" to.equal "3.3.3"
   expect "$(version.get)" to.equal "3.3.3"
-  rm VERSION
 }
 
 test_version_bump_patch() {
