@@ -1,0 +1,69 @@
+#!/bin/bash
+
+DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "${DIR}/../../main/index.sh"
+
+test_version_get_success() {
+  echo "1.2.3" > .tmp-version
+  expect "$(version.get .tmp-version)" to.equal "1.2.3"
+  rm .tmp-version
+}
+
+test_version_get_default_file() {
+  echo "0.9.1" > VERSION
+  expect "$(version.get)" to.equal "0.9.1"
+  rm VERSION
+}
+
+test_version_get_invalid_format() {
+  echo "v1.2" > .tmp-version
+  expect.run "version.get .tmp-version" to.fail.with 2 "Invalid version format"
+  rm .tmp-version
+}
+
+test_version_get_missing_file() {
+  rm -f .tmp-missing
+  expect.run "version.get .tmp-missing" to.fail.with 2 "Version file not found"
+}
+
+test_version_set_and_get() {
+  version.set "2.4.6" .tmp-version
+  expect "$(cat .tmp-version)" to.equal "2.4.6"
+  expect "$(version.get .tmp-version)" to.equal "2.4.6"
+  rm .tmp-version
+}
+
+test_version_set_default_file() {
+  version.set "3.3.3"
+  expect "$(cat VERSION)" to.equal "3.3.3"
+  expect "$(version.get)" to.equal "3.3.3"
+  rm VERSION
+}
+
+test_version_bump_patch() {
+  expect "$(version.bump 1.2.3 patch)" to.equal "1.2.4"
+}
+
+test_version_bump_minor() {
+  expect "$(version.bump 1.2.3 minor)" to.equal "1.3.0"
+}
+
+test_version_bump_major() {
+  expect "$(version.bump 1.2.3 major)" to.equal "2.0.0"
+}
+
+test_version_bump_invalid_type() {
+  expect.run "version.bump 1.2.3 unknown" to.fail.with 2 "Unknown bump type"
+}
+
+test_version_checkMin_less() {
+  expect "$(version.checkMin 1.2.3 2.0.0)" to.equal "true"
+}
+
+test_version_checkMin_equal() {
+  expect "$(version.checkMin 1.2.3 1.2.3)" to.equal ""
+}
+
+test_version_checkMin_greater() {
+  expect "$(version.checkMin 2.1.0 1.9.9)" to.equal ""
+}
