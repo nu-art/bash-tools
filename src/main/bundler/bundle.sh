@@ -60,13 +60,18 @@ collect_sources() {
     suffix="${BASH_REMATCH[1]}"
     abs_path="$(file.path "${dir}/${suffix}")"
 
+    if [[ ! -f "$abs_path" ]]; then
+      log.error "Missing sourced file: '$suffix' (resolved from: $file)"
+      exit 1
+    fi
+
     [[ -n "${included[$abs_path]}" ]] && continue
     included["$abs_path"]=1
 
     # Recurse first to ensure deepest dependencies are included first
     collect_sources "$abs_path"
 
-    rel_path="${abs_path#"${MAIN_ROOT}"/}"
+    rel_path="${abs_path#"${MAIN_ROOT}/"}"
     log.info "  ➕ $abs_path"
     {
       echo "## --- FILE: $rel_path ---"
