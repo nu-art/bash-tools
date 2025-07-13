@@ -96,7 +96,7 @@ for entrypoint in "${bundle_entrypoints[@]}"; do
   name=$(basename "$entrypoint")
   bundle_name="${name#bundle.}"
   bundle_name="${bundle_name%.sh}"
-  DIST_FILE="$DIST_DIR/bash-${bundle_name}.sh"
+  DIST_FILE="$DIST_DIR/bundle.${bundle_name}.sh"
 
   log.info "🔍 Bundling: $entrypoint → $DIST_FILE"
   rel_path="${entrypoint#"$MAIN_ROOT"/}"
