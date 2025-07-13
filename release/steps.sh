@@ -40,7 +40,7 @@ release.publish_github() {
 
   log.info "🚀 Publishing v$version to GitHub..."
 
-  mapfile -t bundles < <(find "$DIST_DIR" -type f -name "bash-*.sh")
+  mapfile -t bundles < <(find "$DIST_DIR" -type f -name "bundle.*.sh")
   if [[ ${#bundles[@]} -eq 0 ]]; then
     log.error "No bundles found to publish in $DIST_DIR"
     exit 1
