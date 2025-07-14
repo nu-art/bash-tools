@@ -77,7 +77,7 @@ collect_sources() {
   log.info "  ➕ $file"
   {
     echo "## --- FILE: $rel_path ---"
-    grep -vE '^\s*source\s+\\?"?\\$\{[A-Za-z_][A-Za-z0-9_]*}/.+\\.sh\\?"?$' "$file" | grep -v '^#! */bin/bash'
+    grep -vE '^\s*source\s+\\?"?\$\{[A-Za-z_][A-Za-z0-9_]*\}/.+\.sh\\?"?$' "$file" | grep -v '^#! */bin/bash'
     echo
   } >> "$DIST_FILE"
 }
