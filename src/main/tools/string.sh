@@ -86,3 +86,18 @@ string.join() {
   echo "$result"
 }
 
+## @function: string.get_max_length(...strings)
+##
+## @description: Get the length of the longest string from provided arguments
+##
+## @return: Length of the longest string
+string.get_max_length() {
+  local max_length=0
+  local current_length
+  for str in "$@"; do
+    current_length=${#str}
+    [[ $current_length -gt $max_length ]] && max_length=$current_length
+  done
+  echo "$max_length"
+}
+

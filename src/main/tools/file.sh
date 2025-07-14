@@ -19,4 +19,16 @@ file.path() {
   fi
 }
 
+## @function: file.relative_path(path, parent_dir)
+##
+## @description: Returns the relative path from parent_dir to the given path
+##               If parent_dir is not provided, uses current working directory
+##
+## @return: relative path starting with ./
+file.relative_path() {
+  local path parent
+  path="$(file.path "$1")"
+  parent="$(file.path "${2:-$(pwd)}")"
 
+  echo "./${path#"$parent"/}"
+}
