@@ -54,7 +54,12 @@ collect_sources() {
   local file="$1"
   local dir abs_path rel_path
 
+  # Prevent duplicate inclusion
+  [[ -n "${included[$file]}" ]] && return
+  included["$file"]=1
+
   dir="$(dirname "$file")"
+
   while read -r line; do
     [[ "$line" =~ ^source\ \"\$\{[A-Za-z_][A-Za-z0-9_]*\}/(.+\.sh)\"$ ]] || continue
     suffix="${BASH_REMATCH[1]}"
@@ -65,20 +70,16 @@ collect_sources() {
       exit 1
     fi
 
-    [[ -n "${included[$abs_path]}" ]] && continue
-    included["$abs_path"]=1
-
-    # Recurse first to ensure deepest dependencies are included first
     collect_sources "$abs_path"
-
-    rel_path="${abs_path#"${MAIN_ROOT}/"}"
-    log.info "  ➕ $abs_path"
-    {
-      echo "## --- FILE: $rel_path ---"
-      grep -vE '^\s*source\s+\\?"?\$\{[A-Za-z_][A-Za-z0-9_]*\}/.+\.sh\\?"?$' "$abs_path" | grep -v '^#! */bin/bash'
-      echo
-    } >> "$DIST_FILE"
   done < "$file"
+
+  rel_path="${file#"${MAIN_ROOT}/"}"
+  log.info "  ➕ $file"
+  {
+    echo "## --- FILE: $rel_path ---"
+    grep -vE '^\s*source\s+\\?"?\\$\{[A-Za-z_][A-Za-z0-9_]*}/.+\\.sh\\?"?$' "$file" | grep -v '^#! */bin/bash'
+    echo
+  } >> "$DIST_FILE"
 }
 
 # Find all bundle entrypoints
