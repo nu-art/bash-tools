@@ -67,5 +67,5 @@ error.__throwImpl() {
   log.error "Exiting with Error code: ${errorCode}"
   log.error ""
 
-  exit ${errorCode}
+  exit "${errorCode}"
 }
