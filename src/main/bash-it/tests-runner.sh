@@ -68,7 +68,7 @@ run_test_file() {
   log.info "# Running tests from file: $test_file"
 
   # shellcheck disable=SC1090
-  source "${test_file}"
+  source "$(pwd)/${test_file}"
 
   if declare -F before > /dev/null; then before; fi
 

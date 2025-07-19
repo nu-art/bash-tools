@@ -1,9 +1,9 @@
 # shellcheck disable=SC1090
-CORE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../core/importer.sh"
 
-source "${CORE_ROOT}/../core/logger.sh"
-source "${CORE_ROOT}/../tools/file.sh"
-source "${CORE_ROOT}/../tools/string.sh"
+import "../core/logger.sh"
+import "../tools/file.sh"
+import "../tools/string.sh"
 
 __RunningPWD="$(pwd)"
 
@@ -11,8 +11,9 @@ __RunningPWD="$(pwd)"
 ##
 ## @description: Throw an error and exit unless code is 0 or 1
 error.throw() {
-  local errorMessage=${1}
-  local errorCode=${2:-$?}
+  local errorMessage=${1:-"Missing Error Message - ADD IT!"}
+  local defaultCode=$?
+  local errorCode="${2:-$defaultCode}"
   [[ "${errorCode}" == "0" || "${errorCode}" == "1" ]] && return
   error.__throwImpl "${errorMessage}" "${errorCode}"
 }
@@ -22,8 +23,9 @@ error.throw() {
 ##
 ## @description: Throw a warning if code is not 0
 error.warn() {
-  local errorMessage=${1}
-  local errorCode=${2:-$?}
+  local errorMessage=${1:-"Missing Warning Message - ADD IT!"}
+  local defaultCode=$?
+  local errorCode="${2:-$defaultCode}"
   [[ "${errorCode}" == "0" ]] && return
   error.__throwImpl "${errorMessage}" "${errorCode}"
 }

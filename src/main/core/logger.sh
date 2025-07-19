@@ -1,7 +1,7 @@
 #!/bin/bash
 
-LOGGER_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-source "${LOGGER_DIR}/../consts/colors.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/importer.sh"
+import "../consts/colors.sh"
 
 LOG_LEVEL__VERBOSE=0
 LOG_LEVEL__DEBUG=1
@@ -11,7 +11,6 @@ LOG_LEVEL__ERROR=4
 
 logger_level=${LOG_LEVEL__VERBOSE}
 logger_colors=("${NoColor}" "${COLOR_BBlue}" "${COLOR_BGreen}" "${COLOR_BYellow}" "${COLOR_BRed}")
-logger_prefixes=("-V-" "-D-" "-I-" "-W-" "-E-")
 
 logger_debugEnabled=
 logger_debugFile=
@@ -43,8 +42,11 @@ logger.setFile() {
   local relativePathToLogFolder=${2}
   local logFilePrefix=${3}
 
-  local logsFolder="$(pwd)/${relativePathToLogFolder}"
-  local dateTimeFormatted=$(date +%Y-%m-%d--%H-%M-%S)
+  local logsFolder
+  logsFolder="$(pwd)/${relativePathToLogFolder}"
+
+  local dateTimeFormatted
+  dateTimeFormatted=$(date +%Y-%m-%d--%H-%M-%S)
 
   [[ ! -d "${logsFolder}" ]] && folder.create "${logsFolder}"
 
@@ -60,7 +62,9 @@ _logger.log() {
 
   ((level < logger_level)) && return
 
-  local logDate="$(date +"%Y-%m-%d_%H:%M:%S")"
+  local logDate
+  logDate="$(date +"%Y-%m-%d_%H:%M:%S")"
+
   logMessage=${logMessage//$'\n'/"\n"${NoColor}${logDate} $$  ${color}}
   echo -e "${logDate} $$  ${color}${logMessage}${NoColor}"
 }

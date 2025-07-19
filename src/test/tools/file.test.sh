@@ -1,7 +1,6 @@
 #!/bin/bash
 
-DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-source "${DIR}/../../main/tools/file.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../main/tools/file.sh"
 
 test_file_path_resolves_absolute_path() {
   mkdir -p .tmp-file
@@ -15,21 +14,33 @@ test_file_path_resolves_absolute_path() {
 }
 
 test_file_path_resolves_parent_dir() {
+  mkdir -p .tmp-root/release
+  pushd .tmp-root > /dev/null || exit 1
+
   local dirty_path="release/.."
-  local result
-
-  result="$(file.path "$dirty_path")"
-
-  expect "$result" to.equal "$(cd "$dirty_path" && pwd)"
-}
-
-test_file_path_resolves_nested_parent_dirs() {
-  local dirty_path="release/../.."
-  local expected
-  local result
+  local expected result
 
   expected="$(cd "$dirty_path" && pwd)"
   result="$(file.path "$dirty_path")"
+
+  popd > /dev/null || exit 1
+  rm -rf .tmp-root
+
+  expect "$result" to.equal "$expected"
+}
+
+test_file_path_resolves_nested_parent_dirs() {
+  mkdir -p .tmp-root/release/child
+  pushd .tmp-root/release > /dev/null || exit 1
+
+  local dirty_path="../.."
+  local expected result
+
+  expected="$(cd "$dirty_path" && pwd)"
+  result="$(file.path "$dirty_path")"
+
+  popd > /dev/null || exit 1
+  rm -rf .tmp-root
 
   expect "$result" to.equal "$expected"
 }

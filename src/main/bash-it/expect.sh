@@ -21,7 +21,28 @@ expect.run() {
 
   local actual
   actual="$(eval "$cmd")"
-  "$@" "$actual"
+  local exitCode=$?
+  "$@" "$actual" "$exitCode"
+}
+
+## @function: to.exit.with(expectedCode, actualOutput, actualExitCode)
+##
+## @description: Asserts that the command exited with the expected code
+##
+## @usage: expect.run "ls" to.exit.with 0
+to.exit.with() {
+  local expected_code="$1"
+  local actual_output="$2"
+  local actual_code="$3"
+
+  if [[ "$actual_code" != "$expected_code" ]]; then
+    fail "\n  expected exit code: $expected_code\n  actual exit code:   $actual_code\n  output:\n$actual_output"
+  fi
+}
+
+## @function: @alias(to.exit.with)
+to.return() {
+  to.exit.with "$@"
 }
 
 ## @function: to.equal(expected, actual)

@@ -19,3 +19,25 @@ test_to_match_fail() {
 test_to_be_empty_fail() {
   expect.run "expect 'non-empty' to.be.empty" to.fail.with 1 "empty value"
 }
+
+# to.exit.with
+test_to_exit_with_success_zero() {
+  expect.run "true" to.exit.with 0
+}
+
+test_to_exit_with_success_nonzero() {
+  expect.run "bash -c 'exit 7'" to.exit.with 7
+}
+
+test_to_exit_with_fail() {
+  expect.run "false" to.exit.with 1
+}
+
+# to.return (alias of to.exit.with)
+test_to_return_success() {
+  expect.run "bash -c 'exit 42'" to.return 42
+}
+
+test_to_return_fail() {
+  expect.run "expect.run \"bash -c 'exit 2'\" to.return 3" to.fail.with 1
+}

@@ -6,12 +6,15 @@
 MAIN_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 source "${MAIN_ROOT}/tools/array.sh"
+source "${MAIN_ROOT}/tools/error.sh"
+source "${MAIN_ROOT}/tools/file.sh"
+source "${MAIN_ROOT}/tools/git.sh"
 source "${MAIN_ROOT}/tools/string.sh"
 source "${MAIN_ROOT}/tools/time.sh"
-source "${MAIN_ROOT}/tools/git.sh"
-source "${MAIN_ROOT}/tools/file.sh"
+source "${MAIN_ROOT}/tools/version.sh"
 source "${MAIN_ROOT}/file-system/folder.sh"
 source "${MAIN_ROOT}/file-system/navigation.sh"
+source "${MAIN_ROOT}/file-system/symlink.sh"
 source "${MAIN_ROOT}/core/logger.sh"
 
 
