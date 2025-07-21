@@ -1,6 +1,6 @@
 #!/bin/bash
 
-RELEASE_ROOT="$(cd "$(dirname "${PWD}/$0")" && pwd)"
+RELEASE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "RELEASE_ROOT: ${RELEASE_ROOT}"
 echo "\$0: $0"
 echo "Caller PWD: $PWD"
@@ -18,7 +18,7 @@ release.run_tests() {
 }
 
 release.bundle() {
-  bash "$MAIN_ROOT/bundler/bundle.sh" "$MAIN_ROOT"
+  bash "$MAIN_ROOT/bundler/bundle.sh" --source "$MAIN_ROOT"
 }
 
 release.bump_version() {

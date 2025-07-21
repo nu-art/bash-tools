@@ -16,10 +16,6 @@ before() {
   folder.create "$DIST_DIR"
 }
 
-#after() {
-#  folder.delete "$DIST_DIR"
-#}
-
 ## @test: successful bundling
 ## @expect: exit-code == 0, file generated and contains main logic
 test_successful_bundle() {
@@ -56,6 +52,7 @@ test_output_cleaned() {
 
   bash "$BUNDLER" --source "$source" --dist "$DIST_DIR"
   expect "$(cat "$bundled")" to.not.contain "source "
+  expect "$(cat "$bundled")" to.not.contain "import "
 }
 
 ## @test: nested import handled
@@ -67,4 +64,32 @@ test_recursive_imports() {
   bash "$BUNDLER" --source "$source" --dist "$DIST_DIR"
   expect "$(cat "$bundled")" to.contain "nested_func()"
   expect "$(cat "$bundled")" to.contain "base_func()"
+}
+
+## @test: no leftover __DIR vars in output
+## @expect: path resolution variables are stripped
+test_removes_dir_resolution_vars() {
+  local source="$TEST_DIR/nested"
+  local bundled="$DIST_DIR/bundle.nested.sh"
+
+  bash "$BUNDLER" --source "$source" --dist "$DIST_DIR"
+  expect "$(cat "$bundled")" to.not.contain 'BASH_SOURCE[0]'
+  expect "$(cat "$bundled")" to.not.contain 'dirname'
+  expect "$(cat "$bundled")" to.not.contain 'cd "$(dirname'
+}
+
+## @test: handles custom import syntax
+## @expect: file is bundled with imported logic and produces output
+test_import_statement_supported() {
+  local source="$TEST_DIR/import-test"
+  local bundled="$DIST_DIR/bundle.import-test.sh"
+
+  bash "$BUNDLER" --source "$source" --dist "$DIST_DIR"
+  expect "$(cat "$bundled")" to.contain "say_hi()"
+  expect "$(cat "$bundled")" to.contain "Hi from imported file"
+  expect "$(cat "$bundled")" to.not.contain "import "
+
+  local output
+  output="$(bash "$bundled")"
+  expect "$output" to.equal "Hi from imported file"
 }

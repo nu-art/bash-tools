@@ -5,6 +5,7 @@
 
 SYMLINK_TEST_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "${SYMLINK_TEST_DIR}/../../main/core/importer.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../main/core/importer.sh"
 
 import "../../main/file-system/symlink.sh"
 

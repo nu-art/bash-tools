@@ -71,14 +71,18 @@ collect_sources() {
   dir="$(dirname "$file")"
 
   while read -r line; do
-    echo "${line}"
-    if [[ "$line" =~ ^import\ +\"(.+\.sh)\"$ ]]; then
+    if [[ "$line" =~ ^import\ +\"([^\"]+\.sh)\"$ ]]; then
       local import_path="${BASH_REMATCH[1]}"
       abs_path="$(file.path "${dir}/${import_path}")"
-    # Match: source "${VAR}/path.sh"
-    elif [[ "$line" =~ ^source\ +\"\$\{[A-Za-z_][A-Za-z0-9_]*\}/(.+\.sh)\"$ ]]; then
+
+    elif [[ $line =~ ^source\ +\"\$\{[A-Za-z_][A-Za-z0-9_]*\}/(.+\.sh)\"$ ]]; then
       local suffix="${BASH_REMATCH[1]}"
       abs_path="$(file.path "${dir}/${suffix}")"
+
+    elif [[ $line =~ ^source\ +\"\$\(\s*cd.*pwd\s*\)/(.+\.sh)\"$ ]]; then
+      local suffix="${BASH_REMATCH[1]}"
+      abs_path="$(file.path "${dir}/${suffix}")"
+
     else
       continue
     fi
@@ -95,7 +99,10 @@ collect_sources() {
   log.info "  ➕ $file"
   {
     echo "## --- FILE: $rel_path ---"
-    grep -vE '^\s*source\s+\\?"?\$\{[A-Za-z_][A-Za-z0-9_]*\}/.+\.sh\\?"?$' "$file" | grep -v '^#! */bin/bash'
+    grep -vE '^\s*(source|import)\s+.*\.sh' "$file" |
+      grep -v '^#! */bin/bash' |
+        grep -vE '^[A-Za-z_][A-Za-z0-9_]*=\$\(cd .*\bdirname\b.*BASH_SOURCE\[0\].*\)'
+
     echo
   } >> "$DIST_FILE"
 }
