@@ -14,9 +14,29 @@ BUMP_TYPE="patch"
 
 for arg in "$@"; do
   case "$arg" in
+      --help|-h)
+        echo "Usage: release.sh [options]"
+        echo ""
+        echo "Options:"
+        echo "  --skip-tests        Skip the test phase"
+        echo "  --skip-bundle       Skip the bundling phase"
+        echo "  --skip-publish      Skip the GitHub publish phase"
+        echo "  --skip-bump         Skip version bumping"
+        echo "  --skip-commit       Skip committing the bumped version"
+        echo "  --bump=<type>       Version bump type (patch, minor, major). Default: patch"
+        echo "  --help, -h          Show this help message"
+        exit 0
+        ;;
+
     --skip-tests) RUN_TESTS=false ;;
     --skip-bundle) RUN_BUNDLE=false ;;
-    --skip-publish) RUN_PUBLISH=false ;;
+    --bundle-only)
+      RUN_TESTS=false
+      RUN_PUBLISH=false
+      RUN_BUMP=false
+      RUN_COMMIT=false
+      ;;
+    --skip-publish) RUN_PUBLISH=false; RUN_COMMIT=false ;;
     --skip-bump) RUN_BUMP=false ;;
     --skip-commit) RUN_COMMIT=false ;;
     --bump=*) BUMP_TYPE="${arg#*=}" ;;

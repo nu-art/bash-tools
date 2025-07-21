@@ -1,6 +1,10 @@
 #!/bin/bash
 
-RELEASE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RELEASE_ROOT="$(cd "$(dirname "${PWD}/$0")" && pwd)"
+echo "RELEASE_ROOT: ${RELEASE_ROOT}"
+echo "\$0: $0"
+echo "Caller PWD: $PWD"
+
 MAIN_ROOT="$RELEASE_ROOT/../src/main"
 DIST_DIR="$RELEASE_ROOT/../dist"
 version_file="$RELEASE_ROOT/../VERSION"
@@ -10,7 +14,7 @@ source "$MAIN_ROOT/tools/git.sh"
 source "$MAIN_ROOT/core/logger.sh"
 
 release.run_tests() {
-  bash "$MAIN_ROOT/bash-it/tests-runner.sh"
+  bash "$MAIN_ROOT/bash-it/tests-runner.sh" "$@"
 }
 
 release.bundle() {

@@ -2,7 +2,6 @@
 set -e
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUNDLER_ROOT="${1:-$DIR}"
 
 source "${DIR}/../tools/string.sh"
 source "${DIR}/../tools/array.sh"
@@ -10,11 +9,9 @@ source "${DIR}/../tools/file.sh"
 source "${DIR}/../file-system/folder.sh"
 source "${DIR}/../core/logger.sh"
 
-BUNDLE_PATTERN="bundle.*.sh"
-
 # Discover the repo root by looking for .git or VERSION
 discover_repo_root() {
-  local dir="$BUNDLER_ROOT"
+  local dir="$SOURCE_ROOT"
   while [[ "$dir" != "/" ]]; do
     [[ -d "$dir/.git" || -f "$dir/VERSION" ]] && echo "$dir" && return
     dir="$(dirname "$dir")"
@@ -23,16 +20,29 @@ discover_repo_root() {
   exit 1
 }
 
+BUNDLE_PATTERN="bundle.*.sh"
 REPO_ROOT=$(file.path "${REPO_ROOT:-$(discover_repo_root)}")
-MAIN_ROOT="$REPO_ROOT/src/main"
+SOURCE_ROOT="$REPO_ROOT/src/main"
 DIST_DIR="$REPO_ROOT/dist"
-folder.create "$DIST_DIR"
 
-echo "REPO_ROOT = ${REPO_ROOT}"
-echo "MAIN_ROOT = ${MAIN_ROOT}"
-echo "DIST_DIR  = ${DIST_DIR}"
-echo
-log.info "📦 Starting bundling process"
+# Allow override via --source and --dist
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --source)
+      SOURCE_ROOT="$(file.path "$2")"
+      shift 2
+      ;;
+    --dist)
+      DIST_DIR="$(file.path "$2")"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
+done
+
 
 # Create the DIST_FILE before collecting sources
 create_bundle_file() {
@@ -61,9 +71,17 @@ collect_sources() {
   dir="$(dirname "$file")"
 
   while read -r line; do
-    [[ "$line" =~ ^source\ \"\$\{[A-Za-z_][A-Za-z0-9_]*\}/(.+\.sh)\"$ ]] || continue
-    suffix="${BASH_REMATCH[1]}"
-    abs_path="$(file.path "${dir}/${suffix}")"
+    echo "${line}"
+    if [[ "$line" =~ ^import\ +\"(.+\.sh)\"$ ]]; then
+      local import_path="${BASH_REMATCH[1]}"
+      abs_path="$(file.path "${dir}/${import_path}")"
+    # Match: source "${VAR}/path.sh"
+    elif [[ "$line" =~ ^source\ +\"\$\{[A-Za-z_][A-Za-z0-9_]*\}/(.+\.sh)\"$ ]]; then
+      local suffix="${BASH_REMATCH[1]}"
+      abs_path="$(file.path "${dir}/${suffix}")"
+    else
+      continue
+    fi
 
     if [[ ! -f "$abs_path" ]]; then
       log.error "Missing sourced file: '$suffix' (resolved from: $file)"
@@ -73,7 +91,7 @@ collect_sources() {
     collect_sources "$abs_path"
   done < "$file"
 
-  rel_path="${file#"${MAIN_ROOT}/"}"
+  rel_path="${file#"${SOURCE_ROOT}/"}"
   log.info "  ➕ $file"
   {
     echo "## --- FILE: $rel_path ---"
@@ -82,8 +100,16 @@ collect_sources() {
   } >> "$DIST_FILE"
 }
 
+folder.create "$DIST_DIR"
+
+echo "REPO_ROOT = ${REPO_ROOT}"
+echo "SOURCE_ROOT = ${SOURCE_ROOT}"
+echo "DIST_DIR  = ${DIST_DIR}"
+echo
+log.info "📦 Starting bundling process"
+
 # Find all bundle entrypoints
-mapfile -t bundle_entrypoints < <(find "$BUNDLER_ROOT" -type f -name "$BUNDLE_PATTERN")
+mapfile -t bundle_entrypoints < <(find "$SOURCE_ROOT" -type f -name "$BUNDLE_PATTERN")
 array.map bundle_entrypoints bundle_entrypoints file.path
 
 log.debug "Found ${#bundle_entrypoints[@]} bundle entrypoint(s):"
@@ -100,7 +126,7 @@ for entrypoint in "${bundle_entrypoints[@]}"; do
   DIST_FILE="$DIST_DIR/bundle.${bundle_name}.sh"
 
   log.info "🔍 Bundling: $entrypoint → $DIST_FILE"
-  rel_path="${entrypoint#"$MAIN_ROOT"/}"
+  rel_path="${entrypoint#"$SOURCE_ROOT"/}"
 
   declare -A included=()
   create_bundle_file "$entrypoint" "$rel_path" "$DIST_FILE"

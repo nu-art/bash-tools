@@ -4,3 +4,4 @@ _fixture.txt
 dist
 .idea
 .DS_Store
+.expected
