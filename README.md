@@ -41,20 +41,7 @@ The bundler flattens the tools and test infrastructure into a portable, standalo
 ```bash
 #!/bin/bash
 # ./integration.sh
-set -e
-
-LOADER_URL="https://github.com/nu-art/bash-tools/releases/latest/download/bundle.loader.sh"
-LOADER_PATH="/tmp/bash-tools.loader.$$"
-CACHE_DIR="$HOME/.cache"
-CACHE_PATH="$CACHE_DIR/bash-utils.sh"
-
-mkdir -p "$CACHE_DIR"
-curl -fsSL "$LOADER_URL" -o "$LOADER_PATH"
-chmod +x "$LOADER_PATH"
-
-bash "$LOADER_PATH" --bundle=tools --target="$CACHE_PATH"
-
-source "$CACHE_PATH"
+curl -fsSL https://github.com/nu-art/bash-tools/releases/latest/download/bundle.loader.sh | bash -s -- -b tools -b utils
 string.join "-" hello world
 ```
 
