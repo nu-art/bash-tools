@@ -1,17 +1,24 @@
 #!/bin/bash
 
 RELEASE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-echo "RELEASE_ROOT: ${RELEASE_ROOT}"
-echo "\$0: $0"
-echo "Caller PWD: $PWD"
 
 MAIN_ROOT="$RELEASE_ROOT/../src/main"
 DIST_DIR="$RELEASE_ROOT/../dist"
 version_file="$RELEASE_ROOT/../VERSION"
 
+source "$MAIN_ROOT/tools/file.sh"
 source "$MAIN_ROOT/tools/version.sh"
 source "$MAIN_ROOT/tools/git.sh"
 source "$MAIN_ROOT/core/logger.sh"
+
+release.check(){
+  echo "RELEASE_ROOT: ${RELEASE_ROOT}"
+  echo "MAIN_ROOT: ${MAIN_ROOT}"
+  echo "DIST_DIR: ${DIST_DIR}"
+  echo "\$0: $0"
+  echo "Caller PWD: $PWD"
+  echo "pwd: $(pwd)"
+}
 
 release.run_tests() {
   bash "$MAIN_ROOT/bash-it/tests-runner.sh" "$@"
@@ -61,6 +68,10 @@ release.publish_github() {
     --notes "Automated release of bash-utils v$version"
 
   log.info "✅ Release v$version published successfully."
+}
+
+release.copy.integration_script() {
+  cp "$RELEASE_ROOT/integration.sh" "$DIST_DIR/integration.sh"
 }
 
 release.commit_version() {

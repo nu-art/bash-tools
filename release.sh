@@ -54,6 +54,9 @@ fi
 if $RUN_BUNDLE; then
   echo "📦 Running bundling phase..."
   release.bundle
+
+  echo "📦 Copy integration script..."
+  release.copy.integration_script
 else
   echo "⚠️  Skipping bundling (--skip-bundle)"
 fi

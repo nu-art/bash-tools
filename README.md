@@ -39,9 +39,9 @@ The bundler flattens the tools and test infrastructure into a portable, standalo
 
 #### Integration - Example
 ```bash
+## file: ./dist/integration.sh
 #!/bin/bash
-# ./integration.sh
-curl -fsSL https://github.com/nu-art/bash-tools/releases/latest/download/bundle.loader.sh | bash -s -- -b tools -b utils
+source <(curl -fsSL https://github.com/nu-art/bash-tools/releases/latest/download/bundle.loader.sh) -b tools
 string.join "-" hello world
 ```
 
