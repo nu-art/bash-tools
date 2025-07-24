@@ -51,21 +51,21 @@ release.publish_github() {
 
   log.info "🚀 Publishing v$version to GitHub..."
 
-  mapfile -t bundles < <(find "$DIST_DIR" -type f -name "bundle.*.sh")
-  if [[ ${#bundles[@]} -eq 0 ]]; then
-    log.error "No bundles found to publish in $DIST_DIR"
+  mapfile -t artifacts < <(find "$DIST_DIR" -type f)
+  if [[ ${#artifacts[@]} -eq 0 ]]; then
+    log.error "No artifacts found to publish in $DIST_DIR"
     exit 1
   fi
 
-  log.info "📦 Bundles to publish:"
-  for bundle in "${bundles[@]}"; do
-    log.info " - $bundle"
+  log.info "📦 Files to publish:"
+  for file in "${artifacts[@]}"; do
+    log.info " - $file"
   done
 
   gh release create "v$version" \
-    "${bundles[@]}" \
+    "${artifacts[@]}" \
     --title "v$version" \
-    --notes "Automated release of bash-utils v$version"
+    --notes "Automated release v$version"
 
   log.info "✅ Release v$version published successfully."
 }
