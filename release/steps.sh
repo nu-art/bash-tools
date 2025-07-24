@@ -21,7 +21,7 @@ release.check(){
 }
 
 release.run_tests() {
-  bash "$MAIN_ROOT/bash-it/tests-runner.sh" "$@"
+  bash "$MAIN_ROOT/bash-it/cli.sh" "$@"
 }
 
 release.bundle() {
