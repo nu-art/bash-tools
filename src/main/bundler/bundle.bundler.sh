@@ -3,9 +3,8 @@
 ## Bundle: bash-it
 ## Description: Minimal TAP test runner and `expect` assertion framework
 
-DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-ROOT="$DIR"
+BUNDLE_BUNDLER_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-source "${ROOT}/bundle.sh"
+source "${BUNDLE_BUNDLER_DIR}/bundle.sh"
 
 

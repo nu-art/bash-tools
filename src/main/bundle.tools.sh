@@ -3,18 +3,18 @@
 ## Bundle: tools
 ## Description: Shared Bash utilities (array, string, time, file-system, logger)
 
-MAIN_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+BUNDLE_TOOLS_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-source "${MAIN_ROOT}/tools/array.sh"
-source "${MAIN_ROOT}/tools/error.sh"
-source "${MAIN_ROOT}/tools/file.sh"
-source "${MAIN_ROOT}/tools/git.sh"
-source "${MAIN_ROOT}/tools/string.sh"
-source "${MAIN_ROOT}/tools/time.sh"
-source "${MAIN_ROOT}/tools/version.sh"
-source "${MAIN_ROOT}/file-system/folder.sh"
-source "${MAIN_ROOT}/file-system/navigation.sh"
-source "${MAIN_ROOT}/file-system/symlink.sh"
-source "${MAIN_ROOT}/core/logger.sh"
+source "${BUNDLE_TOOLS_DIR}/tools/array.sh"
+source "${BUNDLE_TOOLS_DIR}/tools/error.sh"
+source "${BUNDLE_TOOLS_DIR}/tools/file.sh"
+source "${BUNDLE_TOOLS_DIR}/tools/git.sh"
+source "${BUNDLE_TOOLS_DIR}/tools/string.sh"
+source "${BUNDLE_TOOLS_DIR}/tools/time.sh"
+source "${BUNDLE_TOOLS_DIR}/tools/version.sh"
+source "${BUNDLE_TOOLS_DIR}/file-system/folder.sh"
+source "${BUNDLE_TOOLS_DIR}/file-system/navigation.sh"
+source "${BUNDLE_TOOLS_DIR}/file-system/symlink.sh"
+source "${BUNDLE_TOOLS_DIR}/core/logger.sh"
 
 
