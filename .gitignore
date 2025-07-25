@@ -1,5 +1,5 @@
 .tap
-fixture.txt
+fixture*.txt
 _fixture.txt
 dist
 .idea
