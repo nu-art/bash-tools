@@ -1,24 +1,28 @@
 #!/bin/bash
 
-RELEASE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../core/importer.sh"
 
-MAIN_ROOT="$RELEASE_ROOT/../src/main"
-DIST_DIR="$RELEASE_ROOT/../dist"
-version_file="$RELEASE_ROOT/../VERSION"
+import "../file-system/folder.sh"
+import "../tools/error.sh"
+import "../tools/file.sh"
+import "../tools/version.sh"
+import "../tools/git.sh"
+import "../core/logger.sh"
 
-source "$MAIN_ROOT/tools/file.sh"
-source "$MAIN_ROOT/tools/version.sh"
-source "$MAIN_ROOT/tools/git.sh"
-source "$MAIN_ROOT/core/logger.sh"
 
-release.check(){
+
+REPO_ROOT="${REPO_ROOT:-$(folder.repo_root)}"
+MAIN_ROOT="$REPO_ROOT/src/main"
+DIST_DIR="$REPO_ROOT/dist"
+
+VERSION_FILE="${REPO_ROOT}/VERSION"
   echo "RELEASE_ROOT: ${RELEASE_ROOT}"
+  echo "REPO_ROOT: ${REPO_ROOT}"
   echo "MAIN_ROOT: ${MAIN_ROOT}"
   echo "DIST_DIR: ${DIST_DIR}"
   echo "\$0: $0"
   echo "Caller PWD: $PWD"
   echo "pwd: $(pwd)"
-}
 
 release.run_tests() {
   bash "$MAIN_ROOT/bash-it/cli.sh" "$@"
@@ -33,16 +37,16 @@ release.bump_version() {
   local current
   local next
 
-  current="$(version.get "$version_file")"
+  current="$(version.get "$VERSION_FILE")"
   next="$(version.bump "$current" "$bump_type")"
 
-  version.set "$next" "$version_file"
+  version.set "$next" "$VERSION_FILE"
   echo "🔖 Version promoted: $current → $next"
 }
 
 release.publish_github() {
   local version
-  version="$(version.get "$version_file")"
+  version="$(version.get "$VERSION_FILE")"
 
   if ! command -v gh >/dev/null 2>&1; then
     log.error "GitHub CLI (gh) is not installed or not in PATH."
@@ -71,12 +75,12 @@ release.publish_github() {
 }
 
 release.copy.integration_script() {
-  cp "$RELEASE_ROOT/integration.sh" "$DIST_DIR/integration.sh"
+  cp "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/integration.sh" "$DIST_DIR/integration.sh"
 }
 
 release.commit_version() {
   local version
-  version="$(version.get "$version_file")"
+  version="$(version.get "$VERSION_FILE")"
 
   log.info "🔐 Committing version bump for v$version"
   git.commit "release: v$version"

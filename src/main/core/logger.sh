@@ -102,5 +102,5 @@ _log.Error()   { _logger._log log.error "$@"; }
 _logger._log() {
   [[ ! "$logger_debugEnabled" ]] && return
   [[ "$logger_debugFile" ]] && ${1} "- DEBUG - ${*:2}" >> "$logger_debugFile" && return
-  ${1} "- DEBUG - ${*:2}"
+  ${1} >&2 "- DEBUG - ${*:2}"
 }

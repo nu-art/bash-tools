@@ -1,5 +1,13 @@
 #!/bin/bash
 
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../core/importer.sh"
+
+import "../core/logger.sh"
+import "../tools/error.sh"
+
+
+
 ## @function: folder.workingDirectory()
 ##
 ## @description: Returns the name of the current directory
@@ -50,7 +58,8 @@ folder.create() {
 ## @description: Deletes all contents of a folder, without deleting the folder itself
 folder.clear() {
   local dir="$1"
-  [[ -d "$dir" ]] && rm -rf "$dir"/* "$dir"/.* 2>/dev/null || echo "[WARN] Not a directory: $dir" >&2
+  [[ -d "$dir" ]] && rm -rf "${dir:?}"/* "${dir:?}"/.* 2>/dev/null || echo "[WARN] Not a directory: $dir" >&2
+  local dir="$1"
 }
 
 ## @function: folder.delete(path)
@@ -70,3 +79,14 @@ folder.list() {
 }
 
 
+# Discover the repo root by looking for .git
+folder.repo_root() {
+  local dir="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+  _log.info "${dir}"
+  while [[ "$dir" != "/" ]]; do
+    [[ -e "$dir/.git" ]] && file.path "$dir" && return
+    dir="$(dirname "$dir")"
+  done
+
+  error.throw "Unable to discover REPO_ROOT (missing .git)" 1
+}

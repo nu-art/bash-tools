@@ -1,5 +1,4 @@
-DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-source "${DIR}/../core/importer.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../core/importer.sh"
 
 import "../core/logger.sh"
 import "../tools/error.sh"

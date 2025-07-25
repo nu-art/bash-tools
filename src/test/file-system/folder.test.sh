@@ -1,20 +1,21 @@
 #!/bin/bash
 
-DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-source "${DIR}/../../main/index.sh"
+FOLDER_TEST_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "${FOLDER_TEST_DIR}/../../main/index.sh"
 
+TEMP_TEST_DIR="${FOLDER_TEST_DIR}/.tmp-fs"
 before_each() {
   ORIG_DIR="$(pwd)"
-  mkdir -p .tmp-fs/nested
+  mkdir -p "${TEMP_TEST_DIR}/nested"
 }
 
 after_each() {
-  cd "$ORIG_DIR"
-  rm -rf .tmp-fs
+  cd "$ORIG_DIR" || exit 1
+  rm -rf "${TEMP_TEST_DIR}"
 }
 
 test_folder_workingDirectory_returns_basename() {
-  cd .tmp-fs
+  cd "${TEMP_TEST_DIR}" || exit 1
   expect "$(folder.workingDirectory)" to.equal ".tmp-fs"
 }
 
@@ -23,31 +24,34 @@ test_folder_myDir_returns_script_dir() {
 }
 
 test_folder_exists_positive() {
-  expect "$(folder.exists .tmp-fs)" to.equal "true"
+  expect "$(folder.exists "${TEMP_TEST_DIR}")" to.equal "true"
 }
 
 test_folder_isDirectory_true() {
-  expect "$(folder.isDirectory .tmp-fs)" to.equal "true"
+  expect "$(folder.isDirectory "${TEMP_TEST_DIR}")" to.equal "true"
 }
 
 test_folder_create_and_delete() {
-  folder.create .tmp-fs/new-dir
-  expect "$(folder.exists .tmp-fs/new-dir)" to.equal "true"
-  folder.delete .tmp-fs/new-dir
-  expect "$(folder.exists .tmp-fs/new-dir)" to.equal ""
+  local test_folder="${TEMP_TEST_DIR}/new-dir"
+  folder.create "${test_folder}"
+  expect "$(folder.exists "${test_folder}")" to.equal "true"
+  folder.delete "${test_folder}"
+  expect "$(folder.exists "${test_folder}")" to.equal ""
 }
 
 test_folder_clear_clears_content() {
-  mkdir -p .tmp-fs/clear-me/inner
-  touch .tmp-fs/clear-me/file.txt
-  folder.clear .tmp-fs/clear-me
-  local contents=$(ls -A .tmp-fs/clear-me | wc -l | xargs)
+  mkdir -p "${TEMP_TEST_DIR}/clear-me/inner"
+  touch "${TEMP_TEST_DIR}/clear-me/file.txt"
+  folder.clear "${TEMP_TEST_DIR}/clear-me"
+  local contents
+  contents=$(ls -A "${TEMP_TEST_DIR}/clear-me" | wc -l | xargs)
   expect "$contents" to.equal "0"
 }
 
 test_folder_list_outputs_subdirs() {
-  mkdir -p .tmp-fs/a .tmp-fs/b
-  local out=$(folder.list .tmp-fs)
+  local out
+  mkdir -p "${TEMP_TEST_DIR}/a" "${TEMP_TEST_DIR}/b"
+  out=$(folder.list "${TEMP_TEST_DIR}")
   expect "$out" to.contain "a"
   expect "$out" to.contain "b"
 }

@@ -1,27 +1,16 @@
 #!/bin/bash
 set -e
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUNDLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-source "${DIR}/../tools/string.sh"
-source "${DIR}/../tools/array.sh"
-source "${DIR}/../tools/file.sh"
-source "${DIR}/../file-system/folder.sh"
-source "${DIR}/../core/logger.sh"
-
-# Discover the repo root by looking for .git or VERSION
-discover_repo_root() {
-  local dir="$SOURCE_ROOT"
-  while [[ "$dir" != "/" ]]; do
-    [[ -d "$dir/.git" || -f "$dir/VERSION" ]] && echo "$dir" && return
-    dir="$(dirname "$dir")"
-  done
-  log.error "Unable to discover REPO_ROOT (missing .git or VERSION marker)"
-  exit 1
-}
+source "${BUNDLER_DIR}/../tools/string.sh"
+source "${BUNDLER_DIR}/../tools/array.sh"
+source "${BUNDLER_DIR}/../tools/file.sh"
+source "${BUNDLER_DIR}/../file-system/folder.sh"
+source "${BUNDLER_DIR}/../core/logger.sh"
 
 BUNDLE_PATTERN="bundle.*.sh"
-REPO_ROOT=$(file.path "${REPO_ROOT:-$(discover_repo_root)}")
+REPO_ROOT="${REPO_ROOT:-$(folder.repo_root)}"
 SOURCE_ROOT="$REPO_ROOT/src/main"
 DIST_DIR="$REPO_ROOT/dist"
 
