@@ -42,7 +42,7 @@ done
   exit 1
 }
 
-CACHE_DIR="$HOME/.cache/bash-tools"
+CACHE_DIR="$PWD/.cache/bash-tools"
 mkdir -p "$CACHE_DIR"
 BASE_URL="https://github.com/${REPO}/releases"
 
