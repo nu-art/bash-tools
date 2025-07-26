@@ -11,11 +11,10 @@ __RunningPWD="$(pwd)"
 ##
 ## @description: Throw an error and exit unless code is 0 or 1
 error.throw() {
-  local errorMessage=${1:-"Missing Error Message - ADD IT!"}
-  local defaultCode=$?
-  local errorCode="${2:-$defaultCode}"
-  [[ "${errorCode}" == "0" || "${errorCode}" == "1" ]] && return
-  error.__throwImpl "${errorMessage}" "${errorCode}"
+  local message="${1:-"Missing Error Message - ADD IT!"}"
+  local code="${2:-1}"
+
+  error.__throwImpl "$message" "$code"
 }
 
 
