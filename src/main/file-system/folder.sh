@@ -31,7 +31,7 @@ folder.myDir() {
 ##
 ## @return: true if exists
 folder.exists() {
-  [[ -e "$1" ]] && echo true
+  [[ -e "$1" ]]
 }
 
 ## @function: folder.isDirectory(path)
@@ -40,7 +40,7 @@ folder.exists() {
 ##
 ## @return: true if it's a directory
 folder.isDirectory() {
-  [[ -d "$1" ]] && echo true
+  [[ -d "$1" ]]
 }
 
 ## @function: folder.create(path)
@@ -48,7 +48,7 @@ folder.isDirectory() {
 ## @description: Creates a folder if it doesn't exist
 folder.create() {
   local dir="$1"
-  [[ -e "$dir" && ! -d "$dir" ]] && echo "[ERROR] Path exists but is not a directory: $dir" >&2 && return 1
+  [[ -e "$dir" && ! -d "$dir" ]] && error.throw "Path exists but is not a directory: $dir" 1
   mkdir -p "$dir"
 }
 
@@ -57,7 +57,11 @@ folder.create() {
 ## @description: Deletes all contents of a folder, without deleting the folder itself
 folder.clear() {
   local dir="$1"
-  [[ -d "$dir" ]] && rm -rf "${dir:?}"/* "${dir:?}"/.* 2>/dev/null || echo "[WARN] Not a directory: $dir" >&2
+  if [[ -d "$dir" ]]; then
+    rm -rf "${dir:?}"/* "${dir:?}"/.* 2>/dev/null
+  else
+    error.throw "Not a directory: $dir" 1
+fi
   local dir="$1"
 }
 

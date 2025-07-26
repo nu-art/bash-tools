@@ -48,7 +48,7 @@ tests.run(){
 
     for test_fn in "${TEST_FUNCS[@]}"; do
       if declare -F before_each > /dev/null; then before_each; fi
-      if output=$("$test_fn"); then
+      if output=$("$test_fn" 2>&1); then
         log.info "ok   $TEST_COUNTER - $test_fn"
         ((PASS_COUNT=PASS_COUNT+1))
       else

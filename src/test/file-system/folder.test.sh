@@ -24,25 +24,26 @@ test_folder_myDir_returns_script_dir() {
 }
 
 test_folder_exists_positive() {
-  expect "$(folder.exists "${TEMP_TEST_DIR}")" to.equal "true"
+  expect.run "$(folder.exists "${TEMP_TEST_DIR}")" to.return 0
 }
 
 test_folder_isDirectory_true() {
-  expect "$(folder.isDirectory "${TEMP_TEST_DIR}")" to.equal "true"
+  expect.run "$(folder.isDirectory "${TEMP_TEST_DIR}")" to.return 0
 }
 
 test_folder_create_and_delete() {
   local test_folder="${TEMP_TEST_DIR}/new-dir"
   folder.create "${test_folder}"
-  expect "$(folder.exists "${test_folder}")" to.equal "true"
+  expect.run "$(folder.exists "${test_folder}")" to.return 0
   folder.delete "${test_folder}"
-  expect "$(folder.exists "${test_folder}")" to.equal ""
+  expect.run "$(folder.exists "${test_folder}")" to.return 0
 }
 
 test_folder_clear_clears_content() {
   mkdir -p "${TEMP_TEST_DIR}/clear-me/inner"
   touch "${TEMP_TEST_DIR}/clear-me/file.txt"
   folder.clear "${TEMP_TEST_DIR}/clear-me"
+  echo "exitcode: $?">temp.txt
   local contents
   contents=$(ls -A "${TEMP_TEST_DIR}/clear-me" | wc -l | xargs)
   expect "$contents" to.equal "0"

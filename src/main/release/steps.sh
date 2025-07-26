@@ -26,7 +26,7 @@ VERSION_FILE="${REPO_ROOT}/VERSION"
   echo "pwd: $(pwd)"
 
 release.run_tests() {
-  tests.run "$@"
+  tests.run
 }
 
 release.bundle() {

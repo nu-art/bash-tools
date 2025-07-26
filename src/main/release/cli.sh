@@ -44,7 +44,7 @@ done
 
 if $RUN_TESTS; then
   echo "🚀 Running test phase..."
-  release.run_tests
+  release.run_tests "$@"
 else
   echo "⚠️  Skipping tests (--skip-tests)"
 fi
