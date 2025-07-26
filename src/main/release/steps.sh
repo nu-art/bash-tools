@@ -8,6 +8,7 @@ import "../tools/file.sh"
 import "../tools/version.sh"
 import "../tools/git.sh"
 import "../core/logger.sh"
+import "../bash-it/runner.sh"
 
 
 
@@ -25,7 +26,7 @@ VERSION_FILE="${REPO_ROOT}/VERSION"
   echo "pwd: $(pwd)"
 
 release.run_tests() {
-  bash "$MAIN_ROOT/bash-it/cli.sh" "$@"
+  tests.run "$@"
 }
 
 release.bundle() {

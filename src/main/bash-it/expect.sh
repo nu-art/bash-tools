@@ -262,5 +262,5 @@ to.fail.with() {
 ## @description: Prints failure message and exits with error
 fail() {
   echo -e "[FAIL] $1" >&2
-  exit 1
+  return 1
 }

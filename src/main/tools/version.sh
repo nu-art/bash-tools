@@ -60,7 +60,7 @@ version.checkMin() {
   IFS='.' read -ra reqParts <<< "$required"
 
   local len=${#reqParts[@]}
-  for ((i = 0; i < len; i++)); do
+  for ((i = 0; i < len; i=i+1)); do
     local curVal=${curParts[i]:-0}
     local reqVal=${reqParts[i]:-0}
 

@@ -12,7 +12,7 @@ tests.run(){
 
   tests.collect_tests() {
     local all_tests=()
-    for test_file in $(find_test_files); do
+    for test_file in $(tests.find_files); do
       mapfile -t funcs < <(grep -Eo '^test_[a-zA-Z0-9_]+' "$test_file")
 
       if [[ -n "$TEST_NAME_FILTER" ]]; then
@@ -48,18 +48,16 @@ tests.run(){
 
     for test_fn in "${TEST_FUNCS[@]}"; do
       if declare -F before_each > /dev/null; then before_each; fi
-
-      if output=$("$test_fn" 2>&1); then
+      if output=$("$test_fn"); then
         log.info "ok   $TEST_COUNTER - $test_fn"
-        ((PASS_COUNT++))
+        ((PASS_COUNT=PASS_COUNT+1))
       else
         log.error "not ok $TEST_COUNTER - $test_fn"
         echo "$output" | sed 's/^/#   /'
-        ((FAIL_COUNT++))
+        ((FAIL_COUNT=FAIL_COUNT+1))
       fi
 
-      ((TEST_COUNTER++))
-
+      ((TEST_COUNTER=TEST_COUNTER+1))
       if declare -F after_each > /dev/null; then after_each; fi
       unset -f "$test_fn"
     done

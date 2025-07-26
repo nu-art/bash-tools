@@ -93,11 +93,11 @@ _logger.banner() {
   _logger.log ${level} "+---$add---+"
 }
 
-_log.Verbose() { _logger._log log.verbose "$@"; }
-_log.Debug()   { _logger._log log.debug "$@"; }
-_log.Info()    { _logger._log log.info "$@"; }
-_log.Warning() { _logger._log log.warning "$@"; }
-_log.Error()   { _logger._log log.error "$@"; }
+_log.verbose() { _logger._log log.verbose "$@"; }
+_log.debug()   { _logger._log log.debug "$@"; }
+_log.info()    { _logger._log log.info "$@"; }
+_log.warning() { _logger._log log.warning "$@"; }
+_log.error()   { _logger._log log.error "$@"; }
 
 _logger._log() {
   [[ ! "$logger_debugEnabled" ]] && return

@@ -43,13 +43,13 @@ error.__throwImpl() {
 
   error.__printStacktrace() {
     local sourceFiles=()
-    for ((i = 2; i < ${#FUNCNAME[@]}; i++)); do
+    for ((i = 2; i < ${#FUNCNAME[@]}; i=i+1)); do
       sourceFiles+=("$(file.path "${BASH_SOURCE[${i}]}")")
     done
 
     length=$(string.get_max_length "${sourceFiles[@]}")
     log.error "  Stack:"
-    for ((i = 2; i < ${#FUNCNAME[@]}; i++)); do
+    for ((i = 2; i < ${#FUNCNAME[@]}; i=i+1)); do
       local _line="[${BASH_LINENO[$((i - 1))]}]"
       local _file="${sourceFiles[$((i - 2))]}"
       alignedLine=$(printf "%$((6 + length - ${#_file}))s" "${_line}")

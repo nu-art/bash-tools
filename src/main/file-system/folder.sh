@@ -3,7 +3,6 @@
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../core/importer.sh"
 
-import "../core/logger.sh"
 import "../tools/error.sh"
 
 
@@ -82,7 +81,6 @@ folder.list() {
 # Discover the repo root by looking for .git
 folder.repo_root() {
   local dir="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
-  _log.info "${dir}"
   while [[ "$dir" != "/" ]]; do
     [[ -e "$dir/.git" ]] && file.path "$dir" && return
     dir="$(dirname "$dir")"
