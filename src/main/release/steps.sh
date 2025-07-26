@@ -31,7 +31,17 @@ release.run_tests() {
 }
 
 release.bundle() {
+  folder.delete "$_DIST_DIR"
   bundler.run "$_MAIN_ROOT" "$_DIST_DIR"
+}
+
+release.tag_current_version() {
+  local version
+  version="$(version.get "$VERSION_FILE")"
+
+  log.info "🔖 Tagging current version: v$version"
+  git.tag "v$version"
+  git.push
 }
 
 release.bump_version() {
@@ -84,8 +94,7 @@ release.commit_version() {
   local version
   version="$(version.get "$VERSION_FILE")"
 
-  log.info "🔐 Committing version bump for v$version"
-  git.commit "release: v$version"
-  git.tag "v$version"
+  log.info "💾 Committing version bump: v$version"
+  git.commit "release: prepare v$version"
   git.push
 }

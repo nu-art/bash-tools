@@ -63,6 +63,7 @@ fi
 
 if $RUN_BUMP; then
   echo "🔧 Running version bump phase..."
+  release.tag_current_version
   release.bump_version "$BUMP_TYPE"
 else
   echo "⚠️  Skipping version bump (--skip-bump)"
