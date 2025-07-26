@@ -7,7 +7,7 @@ source "${BUNDLER_TEST_DIR}/../../main/file-system/folder.sh"
 source "$BUNDLER_TEST_DIR/../../main/bash-it/expect.sh"
 source "$BUNDLER_TEST_DIR/../../main/core/logger.sh"
 
-BUNDLER="$BUNDLER_TEST_DIR/../../main/bundler/bundle.sh"
+BUNDLER="$BUNDLER_TEST_DIR/../../main/bundler/cli.sh"
 TEST_DIR="$BUNDLER_TEST_DIR/../bundler/_fixtures"
 DIST_DIR="$BUNDLER_TEST_DIR/.expected"
 

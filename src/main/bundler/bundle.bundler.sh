@@ -5,6 +5,6 @@
 
 BUNDLE_BUNDLER_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-source "${BUNDLE_BUNDLER_DIR}/bundle.sh"
+source "${BUNDLE_BUNDLER_DIR}/bundler.sh"
 
 

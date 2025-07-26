@@ -9,6 +9,7 @@ import "../tools/version.sh"
 import "../tools/git.sh"
 import "../core/logger.sh"
 import "../bash-it/runner.sh"
+import "../bundler/bundler.sh"
 
 
 
@@ -30,7 +31,7 @@ release.run_tests() {
 }
 
 release.bundle() {
-  bash "$_MAIN_ROOT/bundler/bundle.sh" --source "$_MAIN_ROOT"
+  bundler.run "$_MAIN_ROOT" "$_DIST_DIR"
 }
 
 release.bump_version() {
