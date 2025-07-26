@@ -74,5 +74,5 @@ for BUNDLE_NAME in "${BUNDLE_NAMES[@]}"; do
   fi
 
   # Source the bundle
-  source "$CACHE_PATH"
+  bash "$CACHE_PATH"
 done
