@@ -13,14 +13,14 @@ import "../bash-it/runner.sh"
 
 
 REPO_ROOT="${REPO_ROOT:-$(folder.repo_root)}"
-MAIN_ROOT="$REPO_ROOT/src/main"
-DIST_DIR="$REPO_ROOT/dist"
+_MAIN_ROOT="$REPO_ROOT/src/main"
+_DIST_DIR="$REPO_ROOT/dist"
 
 VERSION_FILE="${REPO_ROOT}/VERSION"
   echo "RELEASE_ROOT: ${RELEASE_ROOT}"
   echo "REPO_ROOT: ${REPO_ROOT}"
-  echo "MAIN_ROOT: ${MAIN_ROOT}"
-  echo "DIST_DIR: ${DIST_DIR}"
+  echo "_MAIN_ROOT: ${_MAIN_ROOT}"
+  echo "_DIST_DIR: ${_DIST_DIR}"
   echo "\$0: $0"
   echo "Caller PWD: $PWD"
   echo "pwd: $(pwd)"
@@ -30,7 +30,7 @@ release.run_tests() {
 }
 
 release.bundle() {
-  bash "$MAIN_ROOT/bundler/bundle.sh" --source "$MAIN_ROOT"
+  bash "$_MAIN_ROOT/bundler/bundle.sh" --source "$_MAIN_ROOT"
 }
 
 release.bump_version() {
@@ -54,11 +54,11 @@ release.publish_github() {
     exit 1
   fi
 
-  log.info "🚀 Publishing v$version to GitHub..."
+  log.info "🚀 Publishing v$version to GitHub from $_DIST_DIR... "
 
-  mapfile -t artifacts < <(find "$DIST_DIR" -type f)
+  mapfile -t artifacts < <(find "$_DIST_DIR" -type f)
   if [[ ${#artifacts[@]} -eq 0 ]]; then
-    log.error "No artifacts found to publish in $DIST_DIR"
+    log.error "No artifacts found to publish in $_DIST_DIR"
     exit 1
   fi
 
@@ -76,7 +76,7 @@ release.publish_github() {
 }
 
 release.copy.integration_script() {
-  cp "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/integration.sh" "$DIST_DIR/integration.sh"
+  cp "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/integration.sh" "$_DIST_DIR/integration.sh"
 }
 
 release.commit_version() {
