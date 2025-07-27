@@ -16,6 +16,10 @@ before() {
   folder.create "$DIST_DIR"
 }
 
+after() {
+  folder.delete "$DIST_DIR"
+}
+
 ## @test: successful bundling
 ## @expect: exit-code == 0, file generated and contains main logic
 test_successful_bundle() {
