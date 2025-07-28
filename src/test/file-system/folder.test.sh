@@ -1,9 +1,8 @@
 #!/bin/bash
 
-FOLDER_TEST_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-source "${FOLDER_TEST_DIR}/../../main/index.sh"
+import "${MAIN_SOURCE_FOLDER}/index.sh"
 
-TEMP_TEST_DIR="${FOLDER_TEST_DIR}/.tmp-fs"
+TEMP_TEST_DIR="${TEST_DIST_FOLDER}/.tmp-fs"
 before_each() {
   ORIG_DIR="$(pwd)"
   mkdir -p "${TEMP_TEST_DIR}/nested"

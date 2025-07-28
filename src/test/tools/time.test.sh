@@ -1,7 +1,6 @@
 #!/bin/bash
 
-DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-source "${DIR}/../../main/index.sh"
+source "${MAIN_SOURCE_FOLDER}/index.sh"
 
 test_time_start_and_duration_zero() {
   time.start "test"

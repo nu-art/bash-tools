@@ -1,7 +1,6 @@
 #!/bin/bash
 set -e
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../main/core/importer.sh"
 import "../../main/doc/generator.sh"
 
 ## @function: test.doc_generator_outputs_expected_docs

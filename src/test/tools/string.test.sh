@@ -1,7 +1,6 @@
 #!/bin/bash
 
-DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-source "${DIR}/../../main/index.sh"
+source "${MAIN_SOURCE_FOLDER}/index.sh"
 
 test_string_endsWith_success() {
   expect "$(string.endsWith "hello-world" "world")" to.equal "true"

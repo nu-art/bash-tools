@@ -1,7 +1,6 @@
 #!/bin/bash
 
-DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-source "${DIR}/../../main/index.sh"
+import "${MAIN_SOURCE_FOLDER}/index.sh"
 
 before_each() {
   ORIG_DIR="$(pwd)"

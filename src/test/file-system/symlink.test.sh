@@ -3,14 +3,10 @@
 ## Test Suite: symlink.test.sh
 ## Description: Validates symlink operations: create, remove, ensure, and query
 
-SYMLINK_TEST_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-source "${SYMLINK_TEST_DIR}/../../main/core/importer.sh"
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../main/core/importer.sh"
-
-import "../../main/file-system/symlink.sh"
+import "${MAIN_SOURCE_FOLDER}/file-system/symlink.sh"
 
 before_each() {
-  TMP_SYMLINK_TEST_DIR="${SYMLINK_TEST_DIR}/.tmp-symlink"
+  TMP_SYMLINK_TEST_DIR="${TEST_DIST_FOLDER}/.tmp-symlink"
   mkdir -p "$TMP_SYMLINK_TEST_DIR"
   touch "$TMP_SYMLINK_TEST_DIR/real-file"
   rm -f "$TMP_SYMLINK_TEST_DIR/link"

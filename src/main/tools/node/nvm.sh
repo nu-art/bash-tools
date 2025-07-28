@@ -4,148 +4,177 @@ import "../../core/logger.sh"
 import "../../tools/error.sh"
 
 
-## @function: node.nvm.source()
+## @function: nvm.default_version()
 ##
-## @description: Source the user's NVM script
+## @description: Default NVM version, overridable via $NVM_DEFAULT_VERSION
 ##
-## @return: 0 if sourced, 1 otherwise
-node.nvm.source() {
+## @return: string
+nvm.default_version() {
+  echo "${NVM_DEFAULT_VERSION:-0.40.3}"
+}
+
+
+## @function: nvm.version()
+##
+## @description: Returns currently installed NVM version (if available)
+##
+## @return: version string or null
+nvm.version() {
+  command -v nvm >/dev/null || return
+  nvm -v 2>/dev/null || true
+}
+
+
+## @function: nvm.source()
+##
+## @description: Sources ~/.nvm/nvm.sh if not already sourced
+##
+## @return: exits 1 on failure
+nvm.source() {
+  if [[ -n "$__nvm_loaded" ]]; then
+    return
+  fi
+
   local nvm_script="$HOME/.nvm/nvm.sh"
+
   if [[ -s "$nvm_script" ]]; then
     # shellcheck disable=SC1090
     . "$nvm_script"
-    return 0
+    __nvm_loaded=true
   fi
 
-  return 1
+  command -v nvm >/dev/null || error.throw "Failed to source NVM from $nvm_script"
 }
 
 
-## @function: node.ensure_nvm()
+## @function: nvm.install(version?)
 ##
-## @description: Ensures NVM is sourced or fails
+## @description: Installs NVM from GitHub if not already installed or outdated
 ##
-## @return: 0 on success, exits 1 if not found
-node.ensure_nvm() {
-  if command -v nvm >/dev/null; then
-    return 0
+## @param: version - optional (defaults to nvm.default_version)
+## @return: exits 1 on failure
+nvm.install() {
+  local version="${1:-$(nvm.default_version)}"
+  local current="$(nvm.version)"
+
+  if [[ "$current" == "$version" ]]; then
+    log.debug "[nvm.install] NVM v$version already installed"
+    return
   fi
 
-  if node.nvm.source; then
-    return 0
-  fi
-
-  error.throw "[node.ensure_nvm] NVM not found. Please run: node.install_nvm"
+  log.info "[nvm.install] Installing NVM v$version..."
+  curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/v$version/install.sh" | bash
+  nvm.source
 }
 
 
-## @function: node.install_nvm()
+## @function: nvm.uninstall()
 ##
-## @description: Installs NVM into ~/.nvm
-##
-## @return: 0 on success
-node.install_nvm() {
-  if [[ -d "$HOME/.nvm" ]]; then
-    log.info "[node.install_nvm] NVM already installed at: \$HOME/.nvm"
-    return 0
-  fi
-
-  log.info "[node.install_nvm] Installing NVM..."
-  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-  node.nvm.source || error.throw "[node.install_nvm] Failed to source NVM after install"
-}
-
-
-## @function: node.uninstall_nvm()
-##
-## @description: Removes NVM installation and shell config entries
-##
-## @return: none
-node.uninstall_nvm() {
-  log.info "[node.uninstall_nvm] Removing NVM from ~/.nvm and shell rc files..."
+## @description: Uninstalls NVM and cleans up shell configs
+nvm.uninstall() {
+  log.info "[nvm.uninstall] Removing NVM and shell RC entries..."
   rm -rf "$HOME/.nvm"
   sed -i.bak '/NVM_DIR/d;/nvm.sh/d' "$HOME/.bashrc" "$HOME/.zshrc" 2>/dev/null || true
 }
 
 
-## @function: node.version.read()
+## @function: nvm.node.version.rc()
 ##
-## @description: Reads version from .nvmrc if exists
+## @description: Reads Node.js version from .nvmrc (if exists)
 ##
-## @return: version string or empty
-node.version.read() {
-  if [[ -f .nvmrc ]]; then
-    cat .nvmrc
-  fi
+## @return: version string or null
+nvm.node.version.rc() {
+  [[ -f .nvmrc ]] && cat .nvmrc
 }
 
 
-## @function: node.current()
+## @function: nvm.node.version.current()
 ##
-## @description: Outputs current active Node.js version
+## @description: Returns currently active Node.js version
 ##
 ## @return: version string or exits 1
-node.current() {
-  if ! command -v node &>/dev/null; then
-    error.throw "[node.current] Node.js not available"
-  fi
-
+nvm.node.version.current() {
+  command -v node >/dev/null || error.throw "Node.js is not available"
   node -v
 }
 
 
-## @function: node.install(version)
+## @function: nvm.node.version.is_installed(version)
 ##
-## @description: Installs the specified Node.js version
-## @param: version
-## @return: 0 on success, exits 1 on failure
-node.install() {
+## @description: Checks if a specific Node.js version is installed in NVM
+##
+## @return: true if installed
+nvm.node.version.is_installed() {
   local version="$1"
+  [[ -z "$version" ]] && error.throw "Missing version to assert"
 
-  [[ -z "$version" ]] && error.throw "[node.install] Missing version param"
+  [[ -d "$HOME/.nvm/versions/node/v$version" ]]
+}
 
-  node.ensure_nvm
+
+## @function: nvm.node.install(version)
+##
+## @description: Installs given Node.js version via NVM
+nvm.node.install() {
+  local version="$1"
+  [[ -z "$version" ]] && version="$(nvm.node.version.rc)"
+  [[ -z "$version" ]] && error.throw "No version specified and no .nvmrc found"
+
+  if nvm.node.version.is_installed "$version"; then
+    log.debug "[nvm.node.install] Node.js v$version already installed"
+    return
+  fi
+
+  nvm.source
   nvm install "$version"
 }
 
-## @function: node.use(version)
+
+## @function: nvm.node.use(version)
 ##
-## @description: Switches to given Node.js version
-## @param: version
-## @return: 0 on success, exits 1 on failure
-node.use() {
+## @description: Activates specified Node.js version
+nvm.node.use() {
   local version="$1"
 
-  [[ -z "$version" ]] && error.throw "[node.use] Missing version param"
+  [[ -z "$version" ]] && version="$(nvm.node.version.rc)"
 
-  node.ensure_nvm
+  [[ -z "$version" ]] && error.throw "Missing version for Node.js use"
+
+  local current_version="$(nvm.node.version.current | sed 's/^v//')"
+  if [[ "$current_version" == "$version" ]]; then
+    log.debug "[nvm.node.use] Node.js v$version already active"
+    return
+  fi
+
+  nvm.source
   nvm use "$version"
 }
 
 
-## @function: node.ensure([version])
+## @function: nvm.node.ensure([version])
 ##
-## @description: Ensures node is installed + activated for given or .nvmrc version
-## @param: version - optional, fallback to .nvmrc
-##
-## @return: 0 on success, exits 1 on error
-node.ensure() {
-  node.ensure_nvm
-
+## @description: Ensures a given or .nvmrc Node.js version is installed and active
+nvm.node.ensure() {
   local version="$1"
-  [[ -z "$version" ]] && version=$(node.version.read)
+  nvm.node.install "$version"
+  nvm.node.use "$version"
+}
 
-  if [[ -z "$version" ]]; then
-    error.throw "[node.ensure] No version specified and .nvmrc not found"
-  fi
 
-  local current="$(node.current | sed 's/^v//')"
-  if [[ "$current" != "$version" ]]; then
-    log.info "[node.ensure] Activating Node.js v$version"
-    nvm install "$version"
-    nvm use "$version"
+## @function: nvm.setup([nvm_version], [node_version])
+##
+## @description: Ensures correct NVM and Node.js versions are installed and active
+##
+## @param: nvm_version - optional, fallback to nvm.default_version
+## @param: node_version - optional, fallback to .nvmrc
+##
+## @return: exits 1 on failure
+nvm.setup() {
+  local nvm_version="${1:-$(nvm.default_version)}"
+  local node_version="${2:-$(nvm.node.version.rc)}"
 
-  else
-    log.info "[node.ensure] Node.js v$version is already active."
-  fi
+  [[ -z "$node_version" ]] && error.throw "No Node.js version provided and no .nvmrc found"
+
+  nvm.install "$nvm_version"
+  nvm.node.ensure "$node_version"
 }

@@ -10,7 +10,7 @@ set -e
 ## @param --version value   (-v) (optional) Specific version to load (default: latest)
 ## @param --force           (-f) (optional) Force re-download even if cache exists
 
-REPO="nu-art/bash-tools"
+REPO=${REPO:-"nu-art/bash-tools"}
 BUNDLE_NAMES=()
 VERSION="latest"
 FORCE_DOWNLOAD=false
@@ -44,7 +44,7 @@ done
 
 CACHE_DIR="$PWD/.cache/bash-tools"
 mkdir -p "$CACHE_DIR"
-BASE_URL="https://github.com/${REPO}/releases"
+BASE_URL=${BASE_URL:-"https://github.com/${REPO}/releases"}
 
 for BUNDLE_NAME in "${BUNDLE_NAMES[@]}"; do
   ASSET="bundle.${BUNDLE_NAME}.sh"

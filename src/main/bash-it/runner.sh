@@ -1,9 +1,16 @@
 #!/bin/bash
 
-BASH_IT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-source "${BASH_IT_DIR}/expect.sh"
-source "${BASH_IT_DIR}/../core/logger.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../core/importer.sh"
 
+import "./expect.sh"
+import "../file-system/folder.sh"
+import "../core/logger.sh"
+
+REPO_ROOT="$(folder.repo_root)"
+MAIN_SOURCE_FOLDER="$REPO_ROOT/src/main"
+TEST_SOURCE_FOLDER="$REPO_ROOT/src/test"
+MAIN_DIST_FOLDER="$REPO_ROOT/dist"
+TEST_DIST_FOLDER="$REPO_ROOT/dist-test"
 
 tests.run(){
   tests.find_files() {

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../main/tools/file.sh"
+source "${MAIN_SOURCE_FOLDER}/tools/file.sh"
 
 test_file_path_resolves_absolute_path() {
   mkdir -p .tmp-file

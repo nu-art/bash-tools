@@ -61,7 +61,7 @@ folder.clear() {
     rm -rf "${dir:?}"/* "${dir:?}"/.* 2>/dev/null
   else
     error.throw "Not a directory: $dir" 1
-fi
+  fi
   local dir="$1"
 }
 
@@ -70,7 +70,9 @@ fi
 ## @description: Deletes the given folder and its contents
 folder.delete() {
   local dir="$1"
-  [[ -d "$dir" ]] && rm -rf "$dir"
+  if [[ -d "$dir" ]]; then
+    rm -rf "$dir"
+  fi
 }
 
 ## @function: folder.list(subdir)

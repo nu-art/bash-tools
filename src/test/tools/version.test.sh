@@ -1,7 +1,6 @@
 #!/bin/bash
 
-DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-source "${DIR}/../../main/tools/version.sh"
+source "${MAIN_SOURCE_FOLDER}/tools/version.sh"
 
 before_each() {
   ORIG_DIR="$(pwd)"

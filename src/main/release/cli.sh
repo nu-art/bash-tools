@@ -34,6 +34,12 @@ for arg in "$@"; do
       RUN_BUMP=false
       RUN_COMMIT=false
       ;;
+    --tests-only)
+      RUN_BUNDLE=false
+      RUN_PUBLISH=false
+      RUN_BUMP=false
+      RUN_COMMIT=false
+      ;;
     --skip-publish) RUN_PUBLISH=false; RUN_COMMIT=false ;;
     --skip-bump) RUN_BUMP=false ;;
     --skip-commit) RUN_COMMIT=false ;;
