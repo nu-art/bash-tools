@@ -73,6 +73,14 @@ for BUNDLE_NAME in "${BUNDLE_NAMES[@]}"; do
     echo "📆 Using cached bundle: $CACHE_PATH"
   fi
 
-  # Source the bundle
-  bash "$CACHE_PATH"
+  case "$BUNDLE_NAME" in
+    lib.*)
+      echo "📆 Sourcing: $CACHE_PATH"
+      source "$CACHE_PATH"
+    ;;
+    *)
+      echo "📆 Bashing: $CACHE_PATH"
+      bash "$CACHE_PATH"
+    ;;
+  esac
 done
