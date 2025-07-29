@@ -16,14 +16,14 @@ _MAIN_ROOT="$REPO_ROOT/src/main"
 _DIST_DIR="$REPO_ROOT/dist"
 
 VERSION_FILE="${REPO_ROOT}/VERSION"
-  echo "RELEASE_ROOT: ${RELEASE_ROOT}"
-  echo "REPO_ROOT: ${REPO_ROOT}"
-  echo "_MAIN_ROOT: ${_MAIN_ROOT}"
-  echo "_DIST_DIR: ${_DIST_DIR}"
-  echo "\$0: $0"
-  echo "Caller PWD: $PWD"
-  echo "pwd: $(pwd)"
-
+#  echo "RELEASE_ROOT: ${RELEASE_ROOT}"
+#  echo "REPO_ROOT: ${REPO_ROOT}"
+#  echo "_MAIN_ROOT: ${_MAIN_ROOT}"
+#  echo "_DIST_DIR: ${_DIST_DIR}"
+#  echo "\$0: $0"
+#  echo "Caller PWD: $PWD"
+#  echo "pwd: $(pwd)"
+echo "params: $@"
 release.run_tests() {
   log.info "🚀 Running test phase..."
   tests.run
