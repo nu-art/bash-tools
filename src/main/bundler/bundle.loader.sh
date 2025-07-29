@@ -14,6 +14,7 @@ REPO=${REPO:-"nu-art/bash-tools"}
 BUNDLE_NAMES=()
 VERSION="latest"
 FORCE_DOWNLOAD=false
+REMAINING_ARGS=()
 
 # Parse args
 while [[ $# -gt 0 ]]; do
@@ -30,9 +31,9 @@ while [[ $# -gt 0 ]]; do
       FORCE_DOWNLOAD=true
       shift
       ;;
-    *)
-      echo "❌ Unknown argument: $1" >&2
-      exit 1
+    *) # collect remaining
+      REMAINING_ARGS+=("$1")
+      shift
       ;;
   esac
 done
@@ -80,7 +81,7 @@ for BUNDLE_NAME in "${BUNDLE_NAMES[@]}"; do
     ;;
     *)
       echo "📆 Bashing: $CACHE_PATH"
-      bash "$CACHE_PATH"
+      bash "$CACHE_PATH" "${REMAINING_ARGS[@]}"
     ;;
   esac
 done
