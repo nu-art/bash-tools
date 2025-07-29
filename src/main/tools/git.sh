@@ -6,7 +6,7 @@
 ##
 ## @return: true if clean
 git.is_clean() {
-  git diff --quiet && git diff --cached --quiet && echo true
+  git diff --quiet && git diff --cached --quiet
 }
 
 ## @function: git.commit(message)

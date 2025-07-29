@@ -1,7 +1,5 @@
 #!/bin/bash
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../core/importer.sh"
-
 import "../file-system/folder.sh"
 import "../tools/error.sh"
 import "../tools/file.sh"
@@ -95,6 +93,7 @@ release.commit_version() {
   version="$(version.get "$VERSION_FILE")"
 
   log.info "💾 Committing version bump: v$version"
+  git.add
   git.commit "release: prepare v$version"
   git.push
 }

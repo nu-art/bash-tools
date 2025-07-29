@@ -8,5 +8,4 @@ REPO_ROOT="${REPO_ROOT:-$(folder.repo_root)}"
 SOURCE_ROOT="$REPO_ROOT/src/main"
 DIST_DIR="$REPO_ROOT/dist"
 
-source "${BUNDLE_RELEASE_DIR}/steps.sh"
 source "${BUNDLE_RELEASE_DIR}/cli.sh"

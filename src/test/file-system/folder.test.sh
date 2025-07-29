@@ -42,7 +42,6 @@ test_folder_clear_clears_content() {
   mkdir -p "${TEMP_TEST_DIR}/clear-me/inner"
   touch "${TEMP_TEST_DIR}/clear-me/file.txt"
   folder.clear "${TEMP_TEST_DIR}/clear-me"
-  echo "exitcode: $?">temp.txt
   local contents
   contents=$(ls -A "${TEMP_TEST_DIR}/clear-me" | wc -l | xargs)
   expect "$contents" to.equal "0"

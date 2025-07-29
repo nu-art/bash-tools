@@ -1,7 +1,9 @@
 #!/bin/bash
 set -e
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/steps.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../core/importer.sh"
+
+import "./steps.sh"
 
 RUN_TESTS=true
 RUN_BUNDLE=true
@@ -26,6 +28,8 @@ for arg in "$@"; do
         exit 0
         ;;
 
+    --dry-run) DRY_RUN=true ;;
+
     --skip-tests) RUN_TESTS=false ;;
     --skip-bundle) RUN_BUNDLE=false ;;
     --bundle-only)
@@ -48,36 +52,45 @@ for arg in "$@"; do
   esac
 done
 
+$DRY_RUN && echo "🧪 DRY RUN MODE ENABLED — no commands will be executed"
+
 if $RUN_TESTS; then
   echo "🚀 Running test phase..."
-  release.run_tests "$@"
+  [[ ! $DRY_RUN ]] &&  release.run_tests "$@"
 else
   echo "⚠️  Skipping tests (--skip-tests)"
 fi
 
+if $RUN_COMMIT && ! git.is_clean; then
+  echo "📌 Pushing local changes before releasing..."
+  [[ ! $DRY_RUN ]] && release.commit_version
+else
+  echo "⚠️  Skipping Pushing local changes before releasing (--skip-commit)"
+fi
+
 if $RUN_BUNDLE; then
   echo "📦 Running bundling phase..."
-  release.bundle
+  [[ ! $DRY_RUN ]] && release.bundle
 fi
 
 if $RUN_PUBLISH; then
   echo "📤 Running publish phase..."
-  release.publish_github
+  [[ ! $DRY_RUN ]] && release.publish_github
 else
   echo "⚠️  Skipping GitHub publish (--skip-publish)"
 fi
 
 if $RUN_BUMP; then
   echo "🔧 Running version bump phase..."
-  release.tag_current_version
-  release.bump_version "$BUMP_TYPE"
+  [[ ! $DRY_RUN ]] && release.tag_current_version
 else
   echo "⚠️  Skipping version bump (--skip-bump)"
 fi
 
 if $RUN_COMMIT; then
   echo "📌 Running commit phase..."
-  release.commit_version
+  [[ ! $DRY_RUN ]] && release.bump_version "$BUMP_TYPE"
+  [[ ! $DRY_RUN ]] && release.commit_version
 else
   echo "⚠️  Skipping version commit (--skip-commit)"
 fi
