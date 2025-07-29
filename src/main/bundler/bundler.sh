@@ -70,7 +70,7 @@ bundler.run() {
     log.info "  ➕ $file"
     {
       echo "## --- FILE: $rel_path ---"
-      grep -vE '^\s*(source|import)\s+.*\.sh' "$file" |
+      grep -vE '^\s*(source|import)\s+".*\.sh' "$file" |
         grep -v '^#! */bin/bash' |
           grep -vE '^[A-Za-z_][A-Za-z0-9_]*=\$\(cd .*\bdirname\b.*BASH_SOURCE\[0\].*\)'
       echo

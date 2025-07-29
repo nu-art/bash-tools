@@ -23,7 +23,6 @@ VERSION_FILE="${REPO_ROOT}/VERSION"
 #  echo "\$0: $0"
 #  echo "Caller PWD: $PWD"
 #  echo "pwd: $(pwd)"
-echo "params: $@"
 release.run_tests() {
   log.info "🚀 Running test phase..."
   tests.run
