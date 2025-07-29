@@ -80,7 +80,7 @@ for BUNDLE_NAME in "${BUNDLE_NAMES[@]}"; do
       source "$CACHE_PATH"
     ;;
     *)
-      echo "📆 Bashing: $CACHE_PATH ${REMAINING_ARGS[@]}
+      echo "📆 Bashing: $CACHE_PATH ${REMAINING_ARGS[@]}"
       bash "$CACHE_PATH" "${REMAINING_ARGS[@]}"
     ;;
   esac
