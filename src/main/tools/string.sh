@@ -61,6 +61,22 @@ string.replace() {
   echo "$string" | sed -E "s${delimiter}${match}${delimiter}${replaceWith}${delimiter}${flags}"
 }
 
+## @function: string.find(regex, string)
+##
+## @description: Returns the first substring of the string that matches the regex
+##
+## @return: matched substring, or empty string if no match
+string.find() {
+  local regex="$1"
+  local input="$2"
+
+  if [[ "$regex" =~ \(.*\) ]]; then
+    echo "$input" | sed -n -E "s/.*$regex.*/\\1/p"
+  else
+    echo "$input" | grep -oE "$regex" | head -n1
+  fi
+}
+
 ## @function: string.replaceAll(match, replaceWith, string, delimiter?)
 ##
 ## @description: Replaces all occurrences of a substring in a given string

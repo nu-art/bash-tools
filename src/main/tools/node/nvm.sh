@@ -16,14 +16,15 @@ nvm.default_version() {
 
 ## @function: nvm.version()
 ##
-## @description: Returns currently installed NVM version (if available)
+## @description: Returns currently installed NVM version from package.json (if available)
 ##
 ## @return: version string or null
 nvm.version() {
-  command -v nvm >/dev/null || return
-  nvm -v 2>/dev/null || true
-}
+  local file="$HOME/.nvm/package.json"
+  [[ -f "$file" ]] || return
 
+  string.find "[0-9]+\.[0-9]+\.[0-9]+" "$(cat "$file")"
+}
 
 ## @function: nvm.source()
 ##
@@ -57,10 +58,13 @@ nvm.install() {
   local version="${1:-$(nvm.default_version)}"
   local current="$(nvm.version)"
 
+  log.verbose "expected version: $version  installed version: $current"
   if [[ "$current" == "$version" ]]; then
     log.debug "[nvm.install] NVM v$version already installed"
     return
   fi
+
+  echo "Current NVM version is $current, updating..."
 
   log.info "[nvm.install] Installing NVM v$version..."
   curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/v$version/install.sh" | bash
@@ -137,7 +141,6 @@ nvm.node.use() {
   local version="$1"
 
   [[ -z "$version" ]] && version="$(nvm.node.version.rc)"
-
   [[ -z "$version" ]] && error.throw "Missing version for Node.js use"
 
   local current_version="$(nvm.node.version.current | sed 's/^v//')"
