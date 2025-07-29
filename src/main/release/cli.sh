@@ -55,40 +55,34 @@ done
 $DRY_RUN && echo "🧪 DRY RUN MODE ENABLED — no commands will be executed"
 
 if $RUN_TESTS; then
-  echo "🚀 Running test phase..."
   [[ ! $DRY_RUN ]] &&  release.run_tests "$@"
 else
   echo "⚠️  Skipping tests (--skip-tests)"
 fi
 
 if $RUN_COMMIT && ! git.is_clean; then
-  echo "📌 Pushing local changes before releasing..."
-  [[ ! $DRY_RUN ]] && release.commit_version
+  [[ ! $DRY_RUN ]] && release.commit_dirty_repo_before_release
 else
   echo "⚠️  Skipping Pushing local changes before releasing (--skip-commit)"
 fi
 
 if $RUN_BUNDLE; then
-  echo "📦 Running bundling phase..."
   [[ ! $DRY_RUN ]] && release.bundle
 fi
 
 if $RUN_PUBLISH; then
-  echo "📤 Running publish phase..."
   [[ ! $DRY_RUN ]] && release.publish_github
 else
   echo "⚠️  Skipping GitHub publish (--skip-publish)"
 fi
 
 if $RUN_BUMP; then
-  echo "🔧 Running version bump phase..."
   [[ ! $DRY_RUN ]] && release.tag_current_version
 else
   echo "⚠️  Skipping version bump (--skip-bump)"
 fi
 
 if $RUN_COMMIT; then
-  echo "📌 Running commit phase..."
   [[ ! $DRY_RUN ]] && release.bump_version "$BUMP_TYPE"
   [[ ! $DRY_RUN ]] && release.commit_version
 else

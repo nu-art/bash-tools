@@ -25,10 +25,13 @@ VERSION_FILE="${REPO_ROOT}/VERSION"
   echo "pwd: $(pwd)"
 
 release.run_tests() {
+  log.info "🚀 Running test phase..."
   tests.run
 }
 
 release.bundle() {
+  log.info "📦 Running bundling phase..."
+
   folder.delete "$_DIST_DIR"
   bundler.run "$_MAIN_ROOT" "$_DIST_DIR"
 }
@@ -51,7 +54,7 @@ release.bump_version() {
   next="$(version.bump "$current" "$bump_type")"
 
   version.set "$next" "$VERSION_FILE"
-  echo "🔖 Version promoted: $current → $next"
+  log.info "🔖 Version promoted: $current → $next"
 }
 
 release.publish_github() {
@@ -59,16 +62,15 @@ release.publish_github() {
   version="$(version.get "$VERSION_FILE")"
 
   if ! command -v gh >/dev/null 2>&1; then
-    log.error "GitHub CLI (gh) is not installed or not in PATH."
-    exit 1
+    log.warning "Publishing v$version to GitHub"
+    error.throw "GitHub CLI (gh) is not installed or not in PATH."
   fi
 
   log.info "🚀 Publishing v$version to GitHub from $_DIST_DIR... "
 
   mapfile -t artifacts < <(find "$_DIST_DIR" -type f)
   if [[ ${#artifacts[@]} -eq 0 ]]; then
-    log.error "No artifacts found to publish in $_DIST_DIR"
-    exit 1
+    error.throw "No artifacts found to publish in $_DIST_DIR"
   fi
 
   log.info "📦 Files to publish:"
@@ -88,12 +90,22 @@ release.copy.integration_script() {
   cp "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/integration.sh" "$_DIST_DIR/integration.sh"
 }
 
-release.commit_version() {
+release.commit_version_bump() {
   local version
   version="$(version.get "$VERSION_FILE")"
 
   log.info "💾 Committing version bump: v$version"
   git.add
   git.commit "release: prepare v$version"
+  git.push
+}
+
+release.commit_dirty_repo_before_release() {
+  local version
+  version="$(version.get "$VERSION_FILE")"
+
+  log.info "💾 Committing dirty repo before releasing version: v$version"
+  git.add
+  git.commit "releasing v$version"
   git.push
 }
