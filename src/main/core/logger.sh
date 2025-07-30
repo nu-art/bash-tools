@@ -2,6 +2,7 @@
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/importer.sh"
 import "../consts/colors.sh"
+import "./core.sh"
 
 LOG_LEVEL__VERBOSE=0
 LOG_LEVEL__DEBUG=1
