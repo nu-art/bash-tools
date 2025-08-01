@@ -27,6 +27,8 @@ bundler.run() {
       echo "## @entry: $rel_path"
       echo "## @version: $(cat "$REPO_ROOT/VERSION")"
       echo "## @generated: $(date +"%Y-%m-%d %H:%M:%S")"
+      echo "log.verbose \"Running: $entrypoint\""
+      echo "log.debug \"Version: $version\""
       echo
     } > "$dist_file"
   }
