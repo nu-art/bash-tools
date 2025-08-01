@@ -21,14 +21,16 @@ bundler.run() {
     local entrypoint="$1"
     local rel_path="$2"
     local dist_file="$3"
+    local bundle_name="$3"
     local version
+
     version="$(cat "$REPO_ROOT/VERSION")"
     {
       echo "#!/bin/bash"
       echo "## @entry: $rel_path"
       echo "## @version: $version"
       echo "## @generated: $(date +"%Y-%m-%d %H:%M:%S")"
-      echo "log.verbose \"Running: $entrypoint\""
+      echo "log.verbose \"Running Bundle: $bundle_name\""
       echo "log.debug \"Version: $version\""
       echo
     } > "$dist_file"
@@ -113,7 +115,7 @@ bundler.run() {
     rel_path="${entrypoint#"$SOURCE_ROOT"/}"
 
     declare -A included=()
-    bundler.create_file "$entrypoint" "$rel_path" "$DIST_FILE"
+    bundler.create_file "$entrypoint" "$rel_path" "$DIST_FILE" "$bundle_name"
     bundler.collect_sources "$entrypoint" "$DIST_FILE"
     chmod +x "$DIST_FILE"
     log.info "✅ Created $DIST_FILE"
