@@ -21,7 +21,7 @@ bundler.run() {
     local entrypoint="$1"
     local rel_path="$2"
     local dist_file="$3"
-    local bundle_name="$3"
+    local bundle_name="$4"
     local version
 
     version="$(cat "$REPO_ROOT/VERSION")"
