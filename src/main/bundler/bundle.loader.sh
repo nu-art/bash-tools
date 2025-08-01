@@ -10,7 +10,7 @@ set -e
 ## @param --version value   (-v) (optional) Specific version to load (default: latest)
 ## @param --force           (-f) (optional) Force re-download even if cache exists
 
-REPO=${REPO:-"nu-art/bash-tools"}
+REPO="nu-art/bash-tools"
 BUNDLE_NAMES=()
 VERSION="latest"
 FORCE_DOWNLOAD=false
@@ -19,6 +19,10 @@ REMAINING_ARGS=()
 # Parse args
 while [[ $# -gt 0 ]]; do
   case $1 in
+    --repo|-r)
+      REPO="$2"
+      shift 2
+      ;;
     --bundle|-b)
       BUNDLE_NAMES+=("$2")
       shift 2
