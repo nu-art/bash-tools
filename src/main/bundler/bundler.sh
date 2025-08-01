@@ -30,8 +30,8 @@ bundler.run() {
       echo "## @entry: $rel_path"
       echo "## @version: $version"
       echo "## @generated: $(date +"%Y-%m-%d %H:%M:%S")"
-      echo "log.verbose \"Running Bundle: $bundle_name\""
-      echo "log.debug \"Version: $version\""
+#      echo "echo \"Running Bundle: $bundle_name\""
+#      echo "echo \"Version: $version\""
       echo
     } > "$dist_file"
   }
