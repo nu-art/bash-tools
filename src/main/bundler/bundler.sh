@@ -21,11 +21,12 @@ bundler.run() {
     local entrypoint="$1"
     local rel_path="$2"
     local dist_file="$3"
-
+    local version
+    version="$(cat "$REPO_ROOT/VERSION")"
     {
       echo "#!/bin/bash"
       echo "## @entry: $rel_path"
-      echo "## @version: $(cat "$REPO_ROOT/VERSION")"
+      echo "## @version: $version"
       echo "## @generated: $(date +"%Y-%m-%d %H:%M:%S")"
       echo "log.verbose \"Running: $entrypoint\""
       echo "log.debug \"Version: $version\""
