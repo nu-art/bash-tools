@@ -5,7 +5,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../core/importer.sh"
 
 import "./steps.sh"
 
-log.debug "Running Bundle: $BUNDLE_NAME $BUNDLE_VERSION"
+log.debug "Running Bundle: $BUNDLE_NAME v$BUNDLE_VERSION"
 
 RUN_TESTS=true
 RUN_BUNDLE=true

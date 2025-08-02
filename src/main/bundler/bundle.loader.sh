@@ -51,7 +51,7 @@ CACHE_DIR="$PWD/.cache/bash-tools"
 mkdir -p "$CACHE_DIR"
 BASE_URL=${BASE_URL:-"https://github.com/${REPO}/releases"}
 
-echo "Running bundle: $BUNDLE_NAME $BUNDLE_VERSION"
+echo "Running bundle: $BUNDLE_NAME v$BUNDLE_VERSION"
 
 for BUNDLE_NAME in "${BUNDLE_NAMES[@]}"; do
   ASSET="bundle.${BUNDLE_NAME}.sh"
