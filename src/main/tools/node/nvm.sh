@@ -58,13 +58,13 @@ nvm.install() {
   local version="${1:-$(nvm.default_version)}"
   local current="$(nvm.version)"
 
-  log.verbose "expected version: $version  installed version: $current"
   if [[ "$current" == "$version" ]]; then
     log.debug "[nvm.install] NVM v$version already installed"
     return
   fi
 
-  echo "Current NVM version is $current, updating..."
+  log.verbose "nvm: expected version: $version  installed version: $current"
+  log.debug "Current NVM version is $current, updating..."
 
   log.info "[nvm.install] Installing NVM v$version..."
   curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/v$version/install.sh" | bash
