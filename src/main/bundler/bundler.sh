@@ -30,8 +30,8 @@ bundler.run() {
       echo "## @entry: $rel_path"
       echo "## @version: $version"
       echo "## @generated: $(date +"%Y-%m-%d %H:%M:%S")"
-#      echo "echo \"Running Bundle: $bundle_name\""
-#      echo "echo \"Version: $version\""
+      echo "BUNDLE_VERSION=\"$version\""
+      echo "BUNDLE_NAME=\"$bundle_name\""
       echo
     } > "$dist_file"
   }

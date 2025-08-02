@@ -36,6 +36,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+log.debug "Running Bundle: $BUNDLE_NAME $BUNDLE_VERSION"
 bundler.run "$BUNDLER_SOURCE_ROOT" "$BUNDLER_DIST_DIR"
 
 

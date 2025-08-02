@@ -43,4 +43,5 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+log.debug "Running Bundle: $BUNDLE_NAME $BUNDLE_VERSION"
 tests.run "$FILE_NAME_FILTER" "$TEST_NAME_FILTER" "$OUTPUT_FILE"
