@@ -88,8 +88,8 @@ else
   echo "⚠️  Skipping version bump (--skip-bump)"
 fi
 
-if [[ $RUN_COMMIT ]] && [[ $BUMP_TYPE == "patch" ]];  then
-  [[ ! $DRY_RUN ]] && release.bump_version "$BUMP_TYPE"
+if [[ $RUN_COMMIT ]];  then
+  [[ ! $DRY_RUN ]] && release.bump_version "patch"
   [[ ! $DRY_RUN ]] && release.commit_version_bump
 else
   echo "⚠️  Skipping version commit (--skip-commit)"
