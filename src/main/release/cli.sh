@@ -62,6 +62,10 @@ else
   echo "⚠️  Skipping tests (--skip-tests)"
 fi
 
+if [[ $RUN_COMMIT ]] && [[ "$BUMP_TYPE" != "patch" ]];  then
+  [[ ! $DRY_RUN ]] && release.bump_version "$BUMP_TYPE"
+fi
+
 if $RUN_COMMIT && ! git.is_clean; then
   [[ ! $DRY_RUN ]] && release.commit_dirty_repo_before_release
 else
@@ -84,7 +88,7 @@ else
   echo "⚠️  Skipping version bump (--skip-bump)"
 fi
 
-if $RUN_COMMIT; then
+if [[ $RUN_COMMIT ]] && [[ $BUMP_TYPE == "patch" ]];  then
   [[ ! $DRY_RUN ]] && release.bump_version "$BUMP_TYPE"
   [[ ! $DRY_RUN ]] && release.commit_version_bump
 else
