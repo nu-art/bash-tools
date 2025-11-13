@@ -13,6 +13,7 @@ RUN_PUBLISH=true
 RUN_BUMP=true
 RUN_COMMIT=true
 BUMP_TYPE="patch"
+DRY_RUN=false
 
 for arg in "$@"; do
   case "$arg" in
@@ -54,43 +55,43 @@ for arg in "$@"; do
   esac
 done
 
-$DRY_RUN && echo "🧪 DRY RUN MODE ENABLED — no commands will be executed"
+[[ "$DRY_RUN" == "true" ]] && echo "🧪 DRY RUN MODE ENABLED — no commands will be executed"
 
-if $RUN_TESTS; then
-  [[ ! $DRY_RUN ]] &&  release.run_tests "$@"
+if [[ "$RUN_TESTS" == "true" ]]; then
+  [[ "$DRY_RUN" != "true" ]] &&  release.run_tests "$@"
 else
   echo "⚠️  Skipping tests (--skip-tests)"
 fi
 
-if $RUN_COMMIT && [[ "$BUMP_TYPE" != "patch" ]];  then
-  [[ ! $DRY_RUN ]] && release.bump_version "$BUMP_TYPE"
+if [[ "$RUN_COMMIT" == "true" ]] && [[ "$BUMP_TYPE" != "patch" ]];  then
+  [[ "$DRY_RUN" != "true" ]] && release.bump_version "$BUMP_TYPE"
 fi
 
-if $RUN_COMMIT && ! git.is_clean; then
-  [[ ! $DRY_RUN ]] && release.commit_dirty_repo_before_release
+if [[ "$RUN_COMMIT" == "true" ]] && ! git.is_clean; then
+  [[ "$DRY_RUN" != "true" ]] && release.commit_dirty_repo_before_release
 else
   echo "⚠️  Skipping Pushing local changes before releasing (--skip-commit)"
 fi
 
-if $RUN_BUNDLE; then
-  [[ ! $DRY_RUN ]] && release.bundle
+if [[ "$RUN_BUNDLE" == "true" ]]; then
+  [[ "$DRY_RUN" != "true" ]] && release.bundle
 fi
 
-if $RUN_PUBLISH; then
-  [[ ! $DRY_RUN ]] && release.publish_github
+if [[ "$RUN_PUBLISH" == "true" ]]; then
+  [[ "$DRY_RUN" != "true" ]] && release.publish_github
 else
   echo "⚠️  Skipping GitHub publish (--skip-publish)"
 fi
 
-if $RUN_BUMP; then
-  [[ ! $DRY_RUN ]] && release.tag_current_version
+if [[ "$RUN_BUMP" == "true" ]]; then
+  [[ "$DRY_RUN" != "true" ]] && release.tag_current_version
 else
   echo "⚠️  Skipping version bump (--skip-bump)"
 fi
 
-if $RUN_COMMIT;  then
-  [[ ! $DRY_RUN ]] && release.bump_version "patch"
-  [[ ! $DRY_RUN ]] && release.commit_version_bump
+if [[ "$RUN_COMMIT" == "true" ]];  then
+  [[ "$DRY_RUN" != "true" ]] && release.bump_version "patch"
+  [[ "$DRY_RUN" != "true" ]] && release.commit_version_bump
 else
   echo "⚠️  Skipping version commit (--skip-commit)"
 fi
