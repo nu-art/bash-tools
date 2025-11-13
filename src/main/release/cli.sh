@@ -104,25 +104,25 @@ else
   echo "⚠️  Skipping Pushing local changes before releasing (--skip-commit)"
 fi
 
-# if [[ "$RUN_BUNDLE" == "true" ]]; then
-#   [[ "$DRY_RUN" != "true" ]] && release.bundle
-# fi
+if [[ "$RUN_BUNDLE" == "true" ]]; then
+  [[ "$DRY_RUN" != "true" ]] && release.bundle
+fi
 
-# if [[ "$RUN_PUBLISH" == "true" ]]; then
-#   [[ "$DRY_RUN" != "true" ]] && release.publish_github
-# else
-#   echo "⚠️  Skipping GitHub publish (--skip-publish)"
-# fi
+if [[ "$RUN_PUBLISH" == "true" ]]; then
+  [[ "$DRY_RUN" != "true" ]] && release.publish_github
+else
+  echo "⚠️  Skipping GitHub publish (--skip-publish)"
+fi
 
-# if [[ "$RUN_BUMP" == "true" ]]; then
-#   [[ "$DRY_RUN" != "true" ]] && release.tag_current_version
-# else
-#   echo "⚠️  Skipping version bump (--skip-bump)"
-# fi
+if [[ "$RUN_BUMP" == "true" ]]; then
+  [[ "$DRY_RUN" != "true" ]] && release.tag_current_version
+else
+  echo "⚠️  Skipping version bump (--skip-bump)"
+fi
 
-# if [[ "$RUN_COMMIT" == "true" ]];  then
-#   [[ "$DRY_RUN" != "true" ]] && release.bump_version "patch"
-#   [[ "$DRY_RUN" != "true" ]] && release.commit_version_bump
-# else
-#   echo "⚠️  Skipping version commit (--skip-commit)"
-# fi
+if [[ "$RUN_COMMIT" == "true" ]];  then
+  [[ "$DRY_RUN" != "true" ]] && release.bump_version "patch"
+  [[ "$DRY_RUN" != "true" ]] && release.commit_version_bump
+else
+  echo "⚠️  Skipping version commit (--skip-commit)"
+fi
