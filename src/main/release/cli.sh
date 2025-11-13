@@ -31,29 +31,60 @@ for arg in "$@"; do
         exit 0
         ;;
 
-    --dry-run) DRY_RUN=true ;;
+    --dry-run) 
+      DRY_RUN=true 
+      ;;
+      
+    --skip-tests) 
+      RUN_TESTS=false 
+      ;;
 
-    --skip-tests) RUN_TESTS=false ;;
-    --skip-bundle) RUN_BUNDLE=false ;;
+    --skip-bundle)
+      RUN_BUNDLE=false
+      ;;
+
     --bundle-only)
       RUN_TESTS=false
       RUN_PUBLISH=false
       RUN_BUMP=false
       RUN_COMMIT=false
       ;;
+
     --tests-only)
       RUN_BUNDLE=false
       RUN_PUBLISH=false
       RUN_BUMP=false
       RUN_COMMIT=false
       ;;
-    --skip-publish) RUN_PUBLISH=false; RUN_COMMIT=false ;;
-    --skip-bump) RUN_BUMP=false ;;
-    --skip-commit) RUN_COMMIT=false ;;
-    --bump=*) BUMP_TYPE="${arg#*=}" ;;
+
+    --skip-publish) 
+      RUN_PUBLISH=false
+      RUN_COMMIT=false 
+      ;;
+
+    --skip-bump) 
+      RUN_BUMP=false
+      ;;
+
+    --skip-commit) 
+      RUN_COMMIT=false 
+      ;;
+
+    --bump=*) 
+      BUMP_TYPE="${arg#*=}" 
+      ;;
+
     *) echo "Unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
+
+log.debug "RUN_TESTS: $RUN_TESTS"
+log.debug "RUN_BUNDLE: $RUN_BUNDLE"
+log.debug "RUN_PUBLISH: $RUN_PUBLISH"
+log.debug "RUN_BUMP: $RUN_BUMP"
+log.debug "RUN_COMMIT: $RUN_COMMIT"
+log.debug "BUMP_TYPE: $BUMP_TYPE"
+log.debug "DRY_RUN: $DRY_RUN"
 
 [[ "$DRY_RUN" == "true" ]] && echo "🧪 DRY RUN MODE ENABLED — no commands will be executed"
 
@@ -73,25 +104,25 @@ else
   echo "⚠️  Skipping Pushing local changes before releasing (--skip-commit)"
 fi
 
-if [[ "$RUN_BUNDLE" == "true" ]]; then
-  [[ "$DRY_RUN" != "true" ]] && release.bundle
-fi
+# if [[ "$RUN_BUNDLE" == "true" ]]; then
+#   [[ "$DRY_RUN" != "true" ]] && release.bundle
+# fi
 
-if [[ "$RUN_PUBLISH" == "true" ]]; then
-  [[ "$DRY_RUN" != "true" ]] && release.publish_github
-else
-  echo "⚠️  Skipping GitHub publish (--skip-publish)"
-fi
+# if [[ "$RUN_PUBLISH" == "true" ]]; then
+#   [[ "$DRY_RUN" != "true" ]] && release.publish_github
+# else
+#   echo "⚠️  Skipping GitHub publish (--skip-publish)"
+# fi
 
-if [[ "$RUN_BUMP" == "true" ]]; then
-  [[ "$DRY_RUN" != "true" ]] && release.tag_current_version
-else
-  echo "⚠️  Skipping version bump (--skip-bump)"
-fi
+# if [[ "$RUN_BUMP" == "true" ]]; then
+#   [[ "$DRY_RUN" != "true" ]] && release.tag_current_version
+# else
+#   echo "⚠️  Skipping version bump (--skip-bump)"
+# fi
 
-if [[ "$RUN_COMMIT" == "true" ]];  then
-  [[ "$DRY_RUN" != "true" ]] && release.bump_version "patch"
-  [[ "$DRY_RUN" != "true" ]] && release.commit_version_bump
-else
-  echo "⚠️  Skipping version commit (--skip-commit)"
-fi
+# if [[ "$RUN_COMMIT" == "true" ]];  then
+#   [[ "$DRY_RUN" != "true" ]] && release.bump_version "patch"
+#   [[ "$DRY_RUN" != "true" ]] && release.commit_version_bump
+# else
+#   echo "⚠️  Skipping version commit (--skip-commit)"
+# fi
