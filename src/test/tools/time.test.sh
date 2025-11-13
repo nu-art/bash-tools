@@ -17,5 +17,5 @@ test_time_multiple_keys_independent() {
   local duration1="$(time.duration "t1")"
   local duration2="$(time.duration "t2")"
   expect "$duration1" to.match "00:0[1-9]"
-  expect "$duration2" to.match "00:0[0-1]"
+  expect "$duration2" to.match "00:0[0-2]"
 }

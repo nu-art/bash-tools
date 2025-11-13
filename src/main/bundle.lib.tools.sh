@@ -17,5 +17,6 @@ source "${BUNDLE_TOOLS_DIR}/file-system/folder.sh"
 source "${BUNDLE_TOOLS_DIR}/file-system/navigation.sh"
 source "${BUNDLE_TOOLS_DIR}/file-system/symlink.sh"
 source "${BUNDLE_TOOLS_DIR}/core/logger.sh"
+source "${BUNDLE_TOOLS_DIR}/ssl/ssl.sh"
 
 
