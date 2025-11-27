@@ -40,7 +40,7 @@ nvm.source() {
 
   if [[ -s "$nvm_script" ]]; then
     # shellcheck disable=SC1090
-    . "$nvm_script"
+    . "$nvm_script" --no-use
     __nvm_loaded=true
   fi
 

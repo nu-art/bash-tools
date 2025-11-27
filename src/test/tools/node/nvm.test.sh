@@ -51,6 +51,9 @@ test_node_version_rc_empty_when_missing() {
 
 test_node_current_version_matches_pattern() {
   local version
+  echo "18.17.1" > "$NVM_TEST_DIR/.nvmrc"
+  nvm.setup
+
   version="$(nvm.node.version.current)"
   expect "$version" to.match "^v[0-9]+\\.[0-9]+\\.[0-9]+"
 }
