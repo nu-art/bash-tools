@@ -7,6 +7,65 @@ import "../core/core.sh"
 import "../tools/error.sh"
 import "../tools/file.sh"
 
+# ============================================================================
+# Private Helper Functions
+# ============================================================================
+
+## @function: _ssl.get_keychain_path()
+##
+## @description: Returns the macOS keychain path (login.keychain-db or login.keychain fallback)
+##
+## @return: Path to the macOS login keychain
+_ssl.get_keychain_path() {
+  local keychain="${HOME}/Library/Keychains/login.keychain-db"
+  if [[ ! -f "$keychain" ]]; then
+    keychain="${HOME}/Library/Keychains/login.keychain"
+  fi
+  echo "$keychain"
+}
+
+## @function: _ssl.get_cert_fingerprint(cert_path)
+##
+## @description: Extracts SHA-1 fingerprint from certificate
+##
+## @param: $1 - Path to certificate file
+##
+## @return: Certificate fingerprint (empty string if extraction fails)
+_ssl.get_cert_fingerprint() {
+  local cert_path="$1"
+  openssl x509 -in "$cert_path" -noout -fingerprint -sha1 2>/dev/null | sed 's/.*=//' | tr -d ':'
+}
+
+## @function: _ssl.get_cert_cn(cert_path)
+##
+## @description: Extracts CN (Common Name) from certificate subject
+##
+## @param: $1 - Path to certificate file
+##
+## @return: Certificate CN (defaults to "localhost" if extraction fails)
+_ssl.get_cert_cn() {
+  local cert_path="$1"
+  local cert_cn
+  cert_cn="$(openssl x509 -in "$cert_path" -noout -subject 2>/dev/null | sed -n 's/.*CN=\([^,]*\).*/\1/p')"
+  if [[ -z "$cert_cn" ]]; then
+    cert_cn="localhost"
+  fi
+  echo "$cert_cn"
+}
+
+## @function: _ssl.get_linux_ca_cert_name()
+##
+## @description: Returns the Linux CA certificate name
+##
+## @return: Linux CA certificate name
+_ssl.get_linux_ca_cert_name() {
+  echo "localhost-dev.crt"
+}
+
+# ============================================================================
+# Public Functions
+# ============================================================================
+
 ## @function: ssl.generate_cert(key_path, cert_path, days?)
 ##
 ## @description: Generate a self-signed SSL certificate using openssl
@@ -99,16 +158,26 @@ ssl.trust_cert_macos() {
     error.throw "security command is not available (not on macOS?)" 1
   fi
 
-  local keychain="${HOME}/Library/Keychains/login.keychain-db"
-  if [[ ! -f "$keychain" ]]; then
-    keychain="${HOME}/Library/Keychains/login.keychain"
+  local keychain
+  keychain="$(_ssl.get_keychain_path)"
+
+  # Get SHA-1 fingerprint to uniquely identify this certificate
+  local cert_fingerprint
+  cert_fingerprint="$(_ssl.get_cert_fingerprint "$cert_path")"
+  
+  if [[ -z "$cert_fingerprint" ]]; then
+    log.warning "Could not extract certificate fingerprint, proceeding with trust attempt"
+  else
+    # Check if this specific certificate (by fingerprint) is already in keychain
+    if security find-certificate -Z "$cert_fingerprint" "$keychain" >/dev/null 2>&1; then
+      log.debug "Certificate already trusted in keychain (fingerprint: ${cert_fingerprint:0:8}...)"
+      return 0
+    fi
   fi
 
   log.info "Adding certificate to macOS keychain: $cert_path"
+  log.info "⚠️  Please check for a confirmation dialog - you may need to approve the certificate trust in another window"
   
-  # Remove existing certificate if present (ignore errors)
-  security delete-certificate -c "localhost" "$keychain" >/dev/null 2>&1 || true
-
   # Add certificate as trusted root
   if security add-trusted-cert -d -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
     log.info "✅ Certificate trusted successfully in macOS keychain"
@@ -140,7 +209,8 @@ ssl.trust_cert_linux() {
   fi
 
   local ca_cert_dir="/usr/local/share/ca-certificates"
-  local cert_name="localhost-dev.crt"
+  local cert_name
+  cert_name="$(_ssl.get_linux_ca_cert_name)"
   local ca_cert_path="${ca_cert_dir}/${cert_name}"
 
   log.info "Adding certificate to Linux CA bundle: $cert_path"
@@ -225,28 +295,38 @@ ssl.untrust_cert_macos() {
     return 0
   fi
 
-  local keychain="${HOME}/Library/Keychains/login.keychain-db"
-  if [[ ! -f "$keychain" ]]; then
-    keychain="${HOME}/Library/Keychains/login.keychain"
-  fi
+  local keychain
+  keychain="$(_ssl.get_keychain_path)"
 
-  # Extract CN from certificate
-  local cert_cn
-  cert_cn="$(openssl x509 -in "$cert_path" -noout -subject 2>/dev/null | sed -n 's/.*CN=\([^,]*\).*/\1/p')"
+  # Get SHA-1 fingerprint to uniquely identify this certificate
+  local cert_fingerprint
+  cert_fingerprint="$(_ssl.get_cert_fingerprint "$cert_path")"
   
-  if [[ -z "$cert_cn" ]]; then
-    # Fallback: try to find certificate by file hash or use "localhost" as default
-    cert_cn="localhost"
-    log.debug "Could not extract CN from certificate, using default: $cert_cn"
-  fi
-
-  log.info "Removing certificate from macOS keychain: $cert_path (CN: $cert_cn)"
-  
-  # Remove certificate from keychain (ignore errors if not found)
-  if security delete-certificate -c "$cert_cn" "$keychain" >/dev/null 2>&1; then
-    log.info "✅ Certificate untrusted successfully from macOS keychain"
+  if [[ -z "$cert_fingerprint" ]]; then
+    log.warning "Could not extract certificate fingerprint, attempting removal by CN"
+    # Fallback to CN if fingerprint extraction fails
+    local cert_cn
+    cert_cn="$(_ssl.get_cert_cn "$cert_path")"
+    
+    log.info "Removing certificate from macOS keychain: $cert_path (CN: $cert_cn)"
+    log.info "⚠️  Please check for a confirmation dialog - you may need to approve the certificate removal in another window"
+    
+    # Remove certificate from keychain by CN (ignore errors if not found)
+    if security delete-certificate -c "$cert_cn" "$keychain" >/dev/null 2>&1; then
+      log.info "✅ Certificate untrusted successfully from macOS keychain"
+    else
+      log.debug "Certificate not found in keychain or already removed: $cert_cn"
+    fi
   else
-    log.debug "Certificate not found in keychain or already removed: $cert_cn"
+    log.info "Removing certificate from macOS keychain: $cert_path (fingerprint: ${cert_fingerprint:0:8}...)"
+    log.info "⚠️  Please check for a confirmation dialog - you may need to approve the certificate removal in another window"
+    
+    # Remove certificate from keychain by fingerprint (ignore errors if not found)
+    if security delete-certificate -Z "$cert_fingerprint" "$keychain" >/dev/null 2>&1; then
+      log.info "✅ Certificate untrusted successfully from macOS keychain"
+    else
+      log.debug "Certificate not found in keychain or already removed (fingerprint: ${cert_fingerprint:0:8}...)"
+    fi
   fi
 }
 
@@ -271,7 +351,8 @@ ssl.untrust_cert_linux() {
   fi
 
   local ca_cert_dir="/usr/local/share/ca-certificates"
-  local cert_name="localhost-dev.crt"
+  local cert_name
+  cert_name="$(_ssl.get_linux_ca_cert_name)"
   local ca_cert_path="${ca_cert_dir}/${cert_name}"
 
   log.info "Removing certificate from Linux CA bundle: $cert_path"
