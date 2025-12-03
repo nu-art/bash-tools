@@ -53,6 +53,60 @@ _ssl.get_cert_cn() {
   echo "$cert_cn"
 }
 
+## @function: _ssl.is_cert_expired_or_expiring(cert_path, days_threshold?)
+##
+## @description: Checks if certificate is expired or will expire within the threshold
+##
+## @param: $1 - Path to certificate file
+## @param: $2 - Optional number of days before expiration to consider "expiring" (default: 30)
+##
+## @return: 0 if expired or expiring soon, 1 if valid
+_ssl.is_cert_expired_or_expiring() {
+  local cert_path="$1"
+  local days_threshold="${2:-30}"
+  
+  if [[ ! -f "$cert_path" ]]; then
+    return 0  # Consider missing cert as "expired" (needs regeneration)
+  fi
+  
+  # Get certificate expiration date
+  local not_after
+  not_after="$(openssl x509 -in "$cert_path" -noout -enddate 2>/dev/null | cut -d= -f2)"
+  
+  if [[ -z "$not_after" ]]; then
+    error.throw "Failed to read certificate expiration date from: $cert_path. Certificate file may be corrupted or invalid." 1
+  fi
+  
+  # Convert expiration date to timestamp (handle both macOS and Linux date formats)
+  local expire_timestamp
+  if [[ "$(uname)" == "Darwin" ]]; then
+    # macOS date format
+    expire_timestamp="$(date -j -f "%b %d %H:%M:%S %Y %Z" "$not_after" +%s 2>/dev/null || date -j -f "%b %d %H:%M:%S %Y" "$not_after" +%s 2>/dev/null)"
+  else
+    # Linux date format
+    expire_timestamp="$(date -d "$not_after" +%s 2>/dev/null)"
+  fi
+  
+  if [[ -z "$expire_timestamp" ]]; then
+    error.throw "Failed to parse certificate expiration date: $not_after (from $cert_path). Certificate file may be corrupted or invalid." 1
+  fi
+  
+  # Get current timestamp
+  local current_timestamp
+  current_timestamp="$(date +%s)"
+  
+  # Calculate days until expiration
+  local days_until_expiry
+  days_until_expiry=$(( (expire_timestamp - current_timestamp) / 86400 ))
+  
+  # Return 0 (expired/expiring) if expired or within threshold
+  if [[ $days_until_expiry -lt $days_threshold ]]; then
+    return 0
+  fi
+  
+  return 1  # Certificate is valid
+}
+
 ## @function: _ssl.get_linux_ca_cert_name()
 ##
 ## @description: Returns the Linux CA certificate name
@@ -290,8 +344,17 @@ ssl.generate_cert() {
   key_dir="$(dirname "$key_path")"
   cert_dir="$(dirname "$cert_path")"
 
-  [[ ! -d "$key_dir" ]] && mkdir -p "$key_dir"
-  [[ ! -d "$cert_dir" ]] && mkdir -p "$cert_dir"
+  # Create directories if they don't exist - throw error if creation fails
+  if [[ ! -d "$key_dir" ]]; then
+    if ! mkdir -p "$key_dir"; then
+      error.throw "Failed to create key directory: $key_dir" 1
+    fi
+  fi
+  if [[ ! -d "$cert_dir" ]]; then
+    if ! mkdir -p "$cert_dir"; then
+      error.throw "Failed to create certificate directory: $cert_dir" 1
+    fi
+  fi
 
   log.info "Generating SSL certificate: $cert_path (valid for $days days)"
   log.debug "CN: $cn"
@@ -302,7 +365,7 @@ ssl.generate_cert() {
   # If SAN entries are provided, we need to use an openssl config file
   if [[ ${#san_entries[@]} -gt 0 ]]; then
     local temp_config
-    temp_config="$(mktemp)"
+    temp_config="$(mktemp)" || error.throw "Failed to create temporary config file" 1
     
     # Create openssl config with SAN extension
     cat > "$temp_config" <<EOF
@@ -322,38 +385,51 @@ subjectAltName = @alt_names
 [alt_names]
 EOF
     
+    # Verify config file was created
+    if [[ ! -f "$temp_config" ]]; then
+      error.throw "Failed to create temporary config file: $temp_config" 1
+    fi
+    
     # Add SAN entries
     local index=1
     for san in "${san_entries[@]}"; do
-      echo "DNS.$index = $san" >> "$temp_config"
+      if ! echo "DNS.$index = $san" >> "$temp_config"; then
+        rm -f "$temp_config"
+        error.throw "Failed to write SAN entry to temporary config file: $temp_config" 1
+      fi
       index=$((index + 1))
     done
     
     # Generate certificate with config
-    openssl req -x509 -newkey rsa:4096 \
+    if ! openssl req -x509 -newkey rsa:4096 \
       -keyout "$key_path" \
       -out "$cert_path" \
       -days "$days" \
       -nodes \
       -config "$temp_config" \
       -extensions v3_req \
-      >/dev/null 2>&1
+      >/dev/null 2>&1; then
+      rm -f "$temp_config"
+      error.throw "Failed to generate SSL certificate with SAN entries" 1
+    fi
     
     # Clean up temp config
     rm -f "$temp_config"
   else
     # Simple certificate without SAN
-    openssl req -x509 -newkey rsa:4096 \
+    if ! openssl req -x509 -newkey rsa:4096 \
       -keyout "$key_path" \
       -out "$cert_path" \
       -days "$days" \
       -nodes \
       -subj "/CN=$cn" \
-      >/dev/null 2>&1
+      >/dev/null 2>&1; then
+      error.throw "Failed to generate SSL certificate" 1
+    fi
   fi
 
   if [[ ! -f "$key_path" || ! -f "$cert_path" ]]; then
-    error.throw "Failed to generate SSL certificate" 1
+    error.throw "Failed to generate SSL certificate - files were not created: key=$key_path, cert=$cert_path" 1
   fi
 
   log.info "✅ SSL certificate generated successfully"
@@ -403,7 +479,7 @@ ssl.generate_cert_with_config() {
 
 ## @function: ssl.ensure_cert(key_path, cert_path, days?)
 ##
-## @description: Lazy certificate generation - only generates if files don't exist
+## @description: Lazy certificate generation - only generates if files don't exist or are expired
 ##
 ## @param: $1 - Path to private key file
 ## @param: $2 - Path to certificate file
@@ -415,12 +491,39 @@ ssl.ensure_cert() {
   local cert_path="$2"
   local days="${3:-365}"
 
+  # Check if certificate files exist
   if [[ -f "$key_path" && -f "$cert_path" ]]; then
-    log.debug "SSL certificate already exists: $cert_path"
-    return 0
+    # Check if certificate is expired or expiring soon (within 30 days)
+    if ! _ssl.is_cert_expired_or_expiring "$cert_path" 30; then
+      log.debug "SSL certificate already exists and is valid: $cert_path"
+      return 0
+    fi
+    
+    # Certificate is expired or expiring soon - remove old certificate and key
+    log.info "Certificate is expired or expiring soon: $cert_path"
+    log.info "Removing old certificate and key files..."
+    
+    # Untrust the old certificate before deleting
+    if [[ -f "$cert_path" ]]; then
+      ssl.untrust_cert "$cert_path" || log.warning "Failed to untrust old certificate (continuing with removal)"
+    fi
+    
+    # Remove old files - throw error if removal fails
+    if ! rm -f "$key_path"; then
+      error.throw "Failed to remove old key file: $key_path" 1
+    fi
+    log.debug "Removed old key file: $key_path"
+    
+    if ! rm -f "$cert_path"; then
+      error.throw "Failed to remove old certificate file: $cert_path" 1
+    fi
+    log.debug "Removed old certificate file: $cert_path"
+    
+    log.info "Generating new certificate..."
   fi
 
-  ssl.generate_cert "$key_path" "$cert_path" "$days"
+  # Generate certificate - this will throw an error if it fails
+  ssl.generate_cert "$key_path" "$cert_path" "$days" || error.throw "Failed to generate SSL certificate: $cert_path" 1
 }
 
 
@@ -453,54 +556,37 @@ ssl.trust_cert_macos() {
   local cert_fingerprint
   cert_fingerprint="$(_ssl.get_cert_fingerprint "$cert_path")"
   
-  # Check if certificate exists in keychain
-  # Note: We'll still attempt to add-trusted-cert to ensure trust settings are correct,
-  # as a certificate can exist in keychain without being trusted
-  local cert_exists=false
-  
-  if [[ -n "$cert_fingerprint" ]]; then
-    # Check if certificate exists in keychain
-    if security find-certificate -Z "$cert_fingerprint" "$keychain" >/dev/null 2>&1; then
-      cert_exists=true
-      log.debug "Certificate found in keychain (fingerprint: ${cert_fingerprint:0:8}...)"
-      log.debug "Verifying trust settings - certificate may exist but not be trusted"
-    fi
-  else
+  if [[ -z "$cert_fingerprint" ]]; then
     log.warning "Could not extract certificate fingerprint, proceeding with trust attempt"
+  else
+    # Check if this specific certificate (by fingerprint) is already in keychain
+    if security find-certificate -Z "$cert_fingerprint" "$keychain" >/dev/null 2>&1; then
+      log.debug "Certificate already trusted in keychain (fingerprint: ${cert_fingerprint:0:8}...)"
+      return 0
+    fi
   fi
 
+  log.info "Adding certificate to macOS keychain: $cert_path"
+  log.info "⚠️  A security dialog should appear - please approve the certificate trust"
+  
+  # Try to add certificate as trusted root (without -d flag to allow dialog)
   # Check if we're in an interactive terminal
   local is_interactive=false
   if [[ -t 0 ]] && [[ -t 1 ]]; then
     is_interactive=true
   fi
   
-  # If certificate exists, we need to verify/update trust settings
-  # If it doesn't exist, we need to add it with trust
-  if [[ "$cert_exists" == true ]]; then
-    log.info "Certificate already exists in keychain - verifying trust settings: $cert_path"
-    log.info "⚠️  A security dialog may appear - please approve if prompted"
-  else
-    log.info "Adding certificate to macOS keychain: $cert_path"
-    log.info "⚠️  A security dialog should appear - please approve the certificate trust"
-  fi
-  
-  # Attempt to add/update certificate with trust (add-trusted-cert updates trust even if cert exists)
-  # This ensures the certificate is trusted, not just present
+  # Attempt to add certificate with trust dialog
   if security add-trusted-cert -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
-    if [[ "$cert_exists" == true ]]; then
-      log.info "✅ Certificate trust settings verified/updated in macOS keychain"
-    else
-      log.info "✅ Certificate trusted successfully in macOS keychain"
-    fi
+    log.info "✅ Certificate trusted successfully in macOS keychain"
     return 0
   fi
   
   # If command failed, check if certificate was actually added (might have been added but trust dialog was dismissed)
   if [[ -n "$cert_fingerprint" ]] && security find-certificate -Z "$cert_fingerprint" "$keychain" >/dev/null 2>&1; then
-    log.info "✅ Certificate found in keychain (may need manual trust configuration)"
+    log.warning "Certificate found in keychain but trust settings may not be configured"
     log.info "   Open Keychain Access and set the certificate to 'Always Trust'"
-    return 0
+    error.throw "Failed to trust certificate automatically - certificate exists but trust not configured. Please manually set trust in Keychain Access." 1
   fi
   
   # Fallback: Open certificate file to trigger macOS certificate installer GUI
@@ -508,20 +594,20 @@ ssl.trust_cert_macos() {
     log.warning "Failed to add certificate via security command"
     log.info "Opening certificate file in macOS certificate installer..."
     if open "$cert_path" 2>/dev/null; then
-      log.info "✅ Certificate file opened - please click 'Add' in the certificate installer dialog"
+      log.info "Certificate file opened - please click 'Add' in the certificate installer dialog"
       log.info "   Then open Keychain Access and set the certificate to 'Always Trust'"
-      return 0
+      error.throw "Failed to trust certificate automatically - opened certificate file for manual installation. Please complete the trust process manually." 1
     fi
   fi
   
-  # Last resort: provide manual instructions
+  # Last resort: provide manual instructions and throw error
   log.warning "Failed to add certificate to keychain automatically"
   log.info "Please manually trust the certificate:"
   log.info "  1. Double-click the certificate file: $cert_path"
   log.info "  2. Click 'Add' in the certificate installer"
   log.info "  3. Open Keychain Access and find the certificate"
   log.info "  4. Double-click it and set to 'Always Trust'"
-  return 1
+  error.throw "Failed to trust certificate automatically. Please manually trust the certificate using the instructions above." 1
 }
 
 

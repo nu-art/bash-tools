@@ -1,0 +1,116 @@
+---
+alwaysApply: true
+---
+
+# Code Conventions
+
+## Coding Style & Conventions
+
+### Function Naming
+- Use `namespace.function()` pattern (e.g., `array.contains`, `log.info`, `folder.create`)
+- Namespace should match the module/file name
+- Function names should be descriptive and use camelCase
+
+### Function Documentation
+All public functions MUST have documentation blocks:
+```bash
+## @function: namespace.function(param1, param2?)
+##
+## @description: Clear description of what the function does
+##
+## @param: $1 - Parameter description
+## @param: $2 - Optional parameter description
+##
+## @return: Description of return value or void
+##
+## @example: namespace.function "arg1" "arg2"
+##
+## @note: Important implementation details (if needed)
+##
+## @dependencies: List required modules (if any)
+```
+
+### Error Handling
+- Use `error.throw(message, code)` for fatal errors that should stop execution
+- Use `log.warning()` for recoverable issues
+- Validate inputs at function boundaries
+- Provide clear error messages with context
+
+### Logging
+Use appropriate log levels:
+- `log.verbose()` - Very detailed debugging information
+- `log.debug()` - Debug information for development
+- `log.info()` - General informational messages
+- `log.warning()` - Warning messages for recoverable issues
+- `log.error()` - Error messages (use `error.throw()` for fatal errors)
+
+### Variable Naming
+- Use descriptive names
+- Prefer local variables: `local var_name="$1"`
+- Use UPPER_CASE for constants/globals only
+- Avoid global namespace pollution
+
+### Shebang
+All executable scripts MUST start with `#!/bin/bash`
+
+## Documentation Standards
+
+### Function Documentation
+All public functions MUST include:
+- `## @function:` - Function signature
+- `## @description:` - What the function does
+- `## @param:` - Each parameter (use `?` for optional)
+- `## @return:` - Return value description or "void"
+- `## @example:` - Usage example (for complex functions)
+- `## @note:` - Important implementation details (if needed)
+- `## @dependencies:` - Required modules (if any)
+
+### Code Comments
+- Comment complex logic, but prefer self-documenting code
+- Use `#` for inline comments
+- Use `##` for documentation blocks
+
+## Code Quality
+
+### Best Practices
+- Use `set -e` in scripts that should fail on errors
+- Prefer early returns over deep nesting
+- Use local variables to avoid global namespace pollution
+- Validate function inputs
+- Handle edge cases explicitly
+
+### Code Organization
+- Group related functions together
+- Keep functions focused and single-purpose
+- Avoid deep nesting (max 3-4 levels)
+- Use helper functions for complex logic
+
+## Common Patterns
+
+### Path Resolution
+```bash
+local REPO_ROOT
+REPO_ROOT="$(folder.repo_root)"
+```
+
+### Function with Optional Parameters
+```bash
+function.name() {
+  local required="$1"
+  local optional="${2:-default_value}"
+  # function body
+}
+```
+
+### Array Operations
+Use array utilities from `tools/array.sh`:
+- `array.contains(item, ...list)`
+- `array.map(fromArray, toArray, mapperFn)`
+- `array.forEach(arrayName, consumerFn)`
+
+### Error Handling Pattern
+```bash
+if [[ ! -f "$file" ]]; then
+  error.throw "File not found: $file" 1
+fi
+```

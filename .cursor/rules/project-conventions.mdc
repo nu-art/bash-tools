@@ -1,0 +1,150 @@
+---
+alwaysApply: true
+---
+
+# bash-tools Project Conventions
+
+## Project Context
+This is an **infrastructure/library** project providing reusable Bash utilities, a bundler, and a testing framework. Focus on modularity, reusability, and comprehensive documentation.
+
+## File Structure
+
+### Source Organization
+- Source files: `src/main/` organized by feature/module
+- Test files: `src/test/` mirroring `src/main/` structure
+- Bundle entrypoints: `bundle.*.sh` files in `src/main/`
+- Distribution: Bundled files go to `dist/`
+- Version: Stored in root `VERSION` file (semantic versioning: `MAJOR.MINOR.PATCH`)
+
+### Module Structure
+Each module should be self-contained in its own directory:
+```
+src/main/
+  module-name/
+    bundle.module-name.sh  # Bundle entrypoint (if needed)
+    cli.sh                 # CLI interface (if needed)
+    module.sh              # Main module code
+```
+
+## Import/Source Patterns
+
+### Preferred Import Method
+Use `import` function for relative imports:
+```bash
+import "../core/logger.sh"
+import "../tools/error.sh"
+```
+
+### Source Pattern
+For absolute paths or when import is not available:
+```bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../core/importer.sh"
+```
+
+### Import Order
+1. First: Import `importer.sh` if using `import` function
+2. Then: Import dependencies in logical order
+3. Last: Import the module's own dependencies
+
+### Avoid
+- Circular dependencies
+- Global `source` without path resolution
+- Hardcoded absolute paths
+
+## Testing Requirements
+
+### Test File Structure
+- Test files: `*.test.sh` in `src/test/`
+- Test files should mirror `src/main/` structure
+- Example: `src/main/tools/string.sh` → `src/test/tools/string.test.sh`
+
+### Test Function Naming
+- Test functions: Named `test_*` (e.g., `test_string_contains_success`)
+- Use descriptive names that explain what is being tested
+
+### Test Framework
+Use `expect` framework for assertions:
+```bash
+expect "$result" to.equal "expected"
+expect "$result" to.contain "substring"
+expect "$result" to.be.empty
+expect "$result" to.have.length 5
+expect.run "command" to.fail.with 1 "error message"
+```
+
+### Lifecycle Hooks
+Use when needed:
+- `before()` - Setup before all tests
+- `before_each()` - Setup before each test
+- `after_each()` - Cleanup after each test
+- `after()` - Cleanup after all tests
+
+### Test Requirements
+- All public functions should have test coverage
+- Tests must pass before any release
+- Run tests with: `bash src/main/bash-it/runner.sh`
+
+## Bundling Process
+
+### Bundle Entrypoints
+- Any `bundle.*.sh` file in `src/main/` is a bundle entrypoint
+- Bundle name is derived from filename: `bundle.tools.sh` → `tools`
+
+### Bundle Structure
+Bundles should:
+1. Load dependencies via `import` or `source`
+2. Define the main entry function
+3. Call the entry function with `"$@"` to pass arguments
+
+### Bundler Behavior
+- Automatically resolves `import` and `source` statements recursively
+- Generated bundles go to `dist/bundle.*.sh`
+- Bundles include version metadata and generation timestamp
+- Strips import/source statements and reorders for dependency correctness
+
+### Bundle Usage
+Bundles are distributed via GitHub releases and can be loaded:
+```bash
+source <(curl -fsSL https://github.com/nu-art/bash-tools/releases/latest/download/bundle.loader.sh) -b tools
+```
+
+## Release Process
+
+Follow this exact sequence:
+1. Run tests: `release.run_tests`
+2. Bundle artifacts: `release.bundle`
+3. Bump version: `release.bump_version <type>` (patch/minor/major)
+4. Commit version bump: `release.commit_version_bump`
+5. Tag version: `release.tag_current_version`
+6. Publish to GitHub: `release.publish_github`
+
+Execute via: `bash release.sh`
+
+## Version Management
+
+### Semantic Versioning
+- Format: `MAJOR.MINOR.PATCH` (e.g., `0.2.6`)
+- Bump patch for bug fixes
+- Bump minor for new features (backward compatible)
+- Bump major for breaking changes
+
+### Version File
+- Stored in `VERSION` file at project root
+- Single line with version number only
+- Updated automatically during release process
+
+## Project-Specific Guidelines
+
+### Infrastructure Focus
+- Focus on reusable, modular utilities
+- Each utility module should be self-contained
+- Provide comprehensive documentation
+- Maintain backward compatibility when possible
+- Test coverage for all public functions
+- Consider performance for frequently-used utilities
+
+### Module Design
+- One module per file/directory
+- Clear separation of concerns
+- Minimal dependencies between modules
+- Use dependency injection patterns when appropriate
