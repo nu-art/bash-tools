@@ -64,7 +64,7 @@ bundler.run() {
       fi
 
       if [[ ! -f "$abs_path" ]]; then
-        log.error "Missing sourced file: '$suffix' (resolved from: $file)"
+        log.error "Missing sourced file: '$abs_path' (resolved from: $file)"
         exit 1
       fi
 
