@@ -648,6 +648,7 @@ ssl.is_cert_trusted() {
   fi
 
   if [[ ! -f "$cert_path" ]]; then
+    error.throw "Certificate file doesn't exist" 1
     return 1  # Certificate file doesn't exist - not trusted
   fi
 
@@ -687,12 +688,12 @@ ssl.is_cert_trusted() {
   local export_success=false
   if [[ "$keychain_type" == "system" ]]; then
     # System keychain: use -s for system trust settings, requires sudo
-    if sudo security trust-settings-export -s "$temp_trust_file" 2>/dev/null; then
+    if sudo security trust-settings-export -s "$temp_trust_file" 2>/dev/null 2>&1; then
       export_success=true
     fi
   else
     # Login keychain: use -d for admin trust settings (user admin domain)
-    if security trust-settings-export -d "$temp_trust_file" 2>/dev/null; then
+    if security trust-settings-export -d "$temp_trust_file" 2>/dev/null 2>&1; then
       export_success=true
     fi
   fi
@@ -711,7 +712,7 @@ ssl.is_cert_trusted() {
   fi
   
   trust_settings="$(cat "$temp_trust_file" 2>/dev/null)"
-  rm -f "$temp_trust_file"
+#  rm -f "$temp_trust_file"
 
   if [[ -z "$trust_settings" ]]; then
     error.throw "Failed to read trust settings from temporary file" 1
