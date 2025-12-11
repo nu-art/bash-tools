@@ -502,8 +502,8 @@ ssl.ensure_cert() {
   shift 4 2>/dev/null || shift 3 2>/dev/null || true
   local san_entries=("$@")
 
-  # Check if certificate files exist
-  if [[ -f "$key_path" && -f "$cert_path" ]]; then
+  # Check if certificate files exist using building block API
+  if ssl.has_cert "$cert_path" && [[ -f "$key_path" ]]; then
     # Check if certificate is expired or expiring soon (within 30 days)
     if ! _ssl.is_cert_expired_or_expiring "$cert_path" 30; then
       log.debug "SSL certificate already exists and is valid: $cert_path"
@@ -514,8 +514,8 @@ ssl.ensure_cert() {
     log.info "Certificate is expired or expiring soon: $cert_path"
     log.info "Removing old certificate and key files..."
     
-    # Untrust the old certificate before deleting
-    if [[ -f "$cert_path" ]]; then
+    # Untrust the old certificate before deleting (using building block API)
+    if ssl.has_cert "$cert_path"; then
       ssl.untrust_cert "$cert_path" || log.warning "Failed to untrust old certificate (continuing with removal)"
     fi
     
@@ -535,6 +535,28 @@ ssl.ensure_cert() {
 
   # Generate certificate with SAN entries - this will throw an error if it fails
   ssl.generate_cert "$key_path" "$cert_path" "$days" "$cn" "${san_entries[@]}" || error.throw "Failed to generate SSL certificate: $cert_path" 1
+}
+
+
+## @function: ssl.has_cert(cert_path)
+##
+## @description: Check if certificate file exists
+##
+## @param: $1 - Path to certificate file
+##
+## @return: 0 if certificate file exists, 1 if not
+ssl.has_cert() {
+  local cert_path="$1"
+  
+  if [[ -z "$cert_path" ]]; then
+    return 1
+  fi
+  
+  if [[ -f "$cert_path" ]]; then
+    return 0
+  fi
+  
+  return 1
 }
 
 
@@ -661,14 +683,14 @@ ssl.is_cert_trusted() {
 }
 
 
-## @function: ssl.add_cert_to_keychain_macos(cert_path)
+## @function: _ssl.add_cert_to_keychain_macos(cert_path)
 ##
-## @description: Add a certificate to macOS keychain without trusting it
+## @description: [PRIVATE] Add a certificate to macOS keychain without trusting it
 ##
 ## @param: $1 - Path to certificate file
 ##
 ## @return: null
-ssl.add_cert_to_keychain_macos() {
+_ssl.add_cert_to_keychain_macos() {
   local cert_path="$1"
 
   if [[ -z "$cert_path" ]]; then
@@ -712,18 +734,18 @@ ssl.add_cert_to_keychain_macos() {
 }
 
 
-## @function: ssl.add_cert_to_keychain_linux(cert_path)
+## @function: _ssl.add_cert_to_keychain_linux(cert_path)
 ##
-## @description: Add a certificate to Linux CA bundle (same as trust on Linux)
+## @description: [PRIVATE] Add a certificate to Linux CA bundle (same as trust on Linux)
 ##
 ## @param: $1 - Path to certificate file
 ##
 ## @return: null
-ssl.add_cert_to_keychain_linux() {
+_ssl.add_cert_to_keychain_linux() {
   local cert_path="$1"
   # On Linux, adding to CA bundle is the same as trusting
   # This function exists for API consistency
-  ssl.trust_cert_linux "$cert_path"
+  _ssl.trust_cert_linux "$cert_path"
 }
 
 
@@ -742,21 +764,121 @@ ssl.add_cert_to_keychain() {
   fi
 
   if [[ $(isMacOS) ]]; then
-    ssl.add_cert_to_keychain_macos "$cert_path"
+    _ssl.add_cert_to_keychain_macos "$cert_path"
   else
-    ssl.add_cert_to_keychain_linux "$cert_path"
+    _ssl.add_cert_to_keychain_linux "$cert_path"
   fi
 }
 
 
-## @function: ssl.trust_cert_macos(cert_path)
+## @function: _ssl.remove_cert_from_keychain_macos(cert_path)
 ##
-## @description: Trust a certificate on macOS using security command
+## @description: [PRIVATE] Remove a certificate from macOS keychain (without untrusting - just removes)
 ##
 ## @param: $1 - Path to certificate file
 ##
 ## @return: null
-ssl.trust_cert_macos() {
+_ssl.remove_cert_from_keychain_macos() {
+  local cert_path="$1"
+
+  if [[ -z "$cert_path" ]]; then
+    error.throw "Missing argument: cert_path='$cert_path'" 1
+  fi
+
+  if [[ ! -f "$cert_path" ]]; then
+    log.warning "Certificate file does not exist: $cert_path (skipping removal)"
+    return 0
+  fi
+
+  if ! command -v security >/dev/null 2>&1; then
+    log.warning "security command is not available (not on macOS?) - skipping removal"
+    return 0
+  fi
+
+  local keychain
+  keychain="$(_ssl.get_keychain_path)"
+
+  # Check if certificate is in keychain
+  if ! ssl.is_cert_in_keychain "$cert_path"; then
+    log.debug "Certificate is not in keychain: $cert_path"
+    return 0
+  fi
+
+  log.info "Removing certificate from macOS system keychain: $cert_path"
+  log.info "⚠️  This requires administrator privileges (sudo)"
+  
+  # Get SHA-1 fingerprint to uniquely identify this certificate
+  local cert_fingerprint
+  cert_fingerprint="$(_ssl.get_cert_fingerprint "$cert_path")"
+  
+  if [[ -z "$cert_fingerprint" ]]; then
+    log.warning "Could not extract certificate fingerprint, attempting removal by CN"
+    local cert_cn
+    cert_cn="$(_ssl.get_cert_cn "$cert_path")"
+    
+    if sudo security delete-certificate -c "$cert_cn" "$keychain" 2>/dev/null; then
+      log.info "✅ Certificate removed from system keychain successfully"
+      return 0
+    else
+      log.debug "Certificate not found in keychain or already removed: $cert_cn"
+      return 0
+    fi
+  fi
+
+  if sudo security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>/dev/null; then
+    log.info "✅ Certificate removed from system keychain successfully"
+    return 0
+  else
+    log.debug "Certificate not found in keychain or already removed (fingerprint: ${cert_fingerprint:0:8}...)"
+    return 0
+  fi
+}
+
+
+## @function: _ssl.remove_cert_from_keychain_linux(cert_path)
+##
+## @description: [PRIVATE] Remove a certificate from Linux CA bundle
+##
+## @param: $1 - Path to certificate file
+##
+## @return: null
+_ssl.remove_cert_from_keychain_linux() {
+  _ssl.untrust_cert_linux "$cert_path"
+}
+
+
+## @function: ssl.remove_cert_from_keychain(cert_path)
+##
+## @description: Platform-aware function to remove certificate from keychain
+##
+## @param: $1 - Path to certificate file
+##
+## @return: null
+ssl.remove_cert_from_keychain() {
+  local cert_path="$1"
+
+  if [[ -z "$cert_path" ]]; then
+    error.throw "Missing argument: cert_path='$cert_path'" 1
+  fi
+
+  if [[ $(isMacOS) ]]; then
+    _ssl.remove_cert_from_keychain_macos "$cert_path"
+  else
+    _ssl.remove_cert_from_keychain_linux "$cert_path"
+  fi
+}
+
+
+## @function: _ssl.trust_cert_macos(cert_path)
+##
+## @description: [PRIVATE] Trust a certificate that is already in the macOS keychain. This function ONLY trusts - it does NOT add certificates. If the certificate is not in the keychain, this function will fail with an error.
+##
+## @param: $1 - Path to certificate file
+##
+## @return: null (throws error if certificate is not in keychain)
+##
+## @note: Certificate must be added to keychain first using ssl.add_cert_to_keychain()
+_ssl.trust_cert_macos() {
   local cert_path="$1"
 
   if [[ -z "$cert_path" ]]; then
@@ -775,8 +897,16 @@ ssl.trust_cert_macos() {
   keychain="$(_ssl.get_keychain_path)"
 
   # Certificate must be in keychain before we can trust it
+  # This function ONLY trusts - it does NOT add certificates to the keychain
+  # If the certificate is not in the keychain, this function will fail
   if ! ssl.is_cert_in_keychain "$cert_path"; then
     error.throw "Certificate is not in keychain. Please add it first using ssl.add_cert_to_keychain: $cert_path" 1
+  fi
+
+  # Check if already trusted
+  if ssl.is_cert_trusted "$cert_path"; then
+    log.debug "Certificate is already trusted in system keychain"
+    return 0
   fi
 
   log.info "Trusting certificate in macOS system keychain: $cert_path"
@@ -790,28 +920,24 @@ ssl.trust_cert_macos() {
     error.throw "Could not extract certificate fingerprint from: $cert_path" 1
   fi
 
-  # For system keychain, if certificate is already added, we need to remove it first
-  # then re-add it with trust settings, OR use trust-settings-import
-  # The -d flag allows updating existing certificates
-  log.debug "Removing certificate from keychain to re-add with trust settings..."
-  sudo security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>/dev/null || log.debug "Certificate removal skipped (may not exist or already removed)"
-  
-  # Add certificate with trust settings in one step
-  # The -d flag allows duplicates/updates, -r trustRoot sets it as trusted root
+  # Try to update trust settings for existing certificate
+  # The -d flag allows updating trust settings for existing certificates
+  # NOTE: We've already verified the cert is in keychain above, so this only updates trust
   if sudo security add-trusted-cert -d -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
     log.info "✅ Certificate trusted successfully in macOS system keychain"
     return 0
   fi
   
-  # If that failed, try without -d flag (in case cert was fully removed)
+  # If that failed, remove and re-add with trust settings
+  # NOTE: This only happens if cert was already in keychain (verified above)
+  # We're re-adding an existing cert with trust, not adding a new one
+  log.debug "Failed to update trust settings, removing and re-adding certificate with trust..."
+  sudo security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>/dev/null || log.debug "Certificate removal skipped"
+  
+  # Re-add with trust settings (cert was already in keychain, we're just updating trust)
   if sudo security add-trusted-cert -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
     log.info "✅ Certificate trusted successfully in macOS system keychain"
     return 0
-  fi
-  
-  # If command failed, check if certificate is still in keychain
-  if ! security find-certificate -Z "$cert_fingerprint" "$keychain" >/dev/null 2>&1; then
-    error.throw "Certificate not found in keychain. Please add it first using ssl.add_cert_to_keychain: $cert_path" 1
   fi
   
   log.warning "Failed to set trust settings automatically"
@@ -825,14 +951,14 @@ ssl.trust_cert_macos() {
 }
 
 
-## @function: ssl.trust_cert_linux(cert_path)
+## @function: _ssl.trust_cert_linux(cert_path)
 ##
-## @description: Trust a certificate on Linux by updating CA bundle
+## @description: [PRIVATE] Trust a certificate on Linux by updating CA bundle
 ##
 ## @param: $1 - Path to certificate file
 ##
 ## @return: null
-ssl.trust_cert_linux() {
+_ssl.trust_cert_linux() {
   local cert_path="$1"
 
   if [[ -z "$cert_path" ]]; then
@@ -886,11 +1012,13 @@ ssl.trust_cert_linux() {
 
 ## @function: ssl.trust_cert(cert_path)
 ##
-## @description: Platform-aware certificate trust function
+## @description: Platform-aware certificate trust function. This function ONLY trusts - it does NOT add certificates. If the certificate is not in the keychain, this function will fail with an error.
 ##
 ## @param: $1 - Path to certificate file
 ##
-## @return: null
+## @return: null (throws error if certificate is not in keychain)
+##
+## @note: Certificate must be added to keychain first using ssl.add_cert_to_keychain()
 ssl.trust_cert() {
   local cert_path="$1"
 
@@ -899,21 +1027,21 @@ ssl.trust_cert() {
   fi
 
   if [[ $(isMacOS) ]]; then
-    ssl.trust_cert_macos "$cert_path"
+    _ssl.trust_cert_macos "$cert_path"
   else
-    ssl.trust_cert_linux "$cert_path"
+    _ssl.trust_cert_linux "$cert_path"
   fi
 }
 
 
-## @function: ssl.untrust_cert_macos(cert_path)
+## @function: _ssl.untrust_cert_macos(cert_path)
 ##
-## @description: Untrust a certificate on macOS by removing it from the keychain
+## @description: [PRIVATE] Untrust a certificate on macOS by removing it from the keychain
 ##
 ## @param: $1 - Path to certificate file
 ##
 ## @return: null
-ssl.untrust_cert_macos() {
+_ssl.untrust_cert_macos() {
   local cert_path="$1"
 
   if [[ -z "$cert_path" ]]; then
@@ -966,14 +1094,14 @@ ssl.untrust_cert_macos() {
 }
 
 
-## @function: ssl.untrust_cert_linux(cert_path)
+## @function: _ssl.untrust_cert_linux(cert_path)
 ##
-## @description: Untrust a certificate on Linux by removing it from CA bundle
+## @description: [PRIVATE] Untrust a certificate on Linux by removing it from CA bundle
 ##
 ## @param: $1 - Path to certificate file
 ##
 ## @return: null
-ssl.untrust_cert_linux() {
+_ssl.untrust_cert_linux() {
   local cert_path="$1"
 
   if [[ -z "$cert_path" ]]; then
@@ -1039,9 +1167,9 @@ ssl.untrust_cert() {
   fi
 
   if [[ $(isMacOS) ]]; then
-    ssl.untrust_cert_macos "$cert_path"
+    _ssl.untrust_cert_macos "$cert_path"
   else
-    ssl.untrust_cert_linux "$cert_path"
+    _ssl.untrust_cert_linux "$cert_path"
   fi
 }
 
