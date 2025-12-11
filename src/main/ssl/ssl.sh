@@ -663,53 +663,36 @@ ssl.is_cert_trusted() {
     return 1
   fi
 
-  # For system keychain, checking trust via CLI is notoriously difficult
-  # We'll try multiple methods to determine if the certificate is trusted
+  # System keychain requires sudo to read trust settings
+  # Determine if we need sudo based on keychain path
+  local needs_sudo=false
+  if [[ "$keychain" == "/Library/Keychains/System.keychain" ]]; then
+    needs_sudo=true
+  fi
 
-  # Method 1: Check trust settings export (requires admin for system keychain)
-  # This exports trust settings but may not work reliably for system keychain
+  # Export trust settings (with sudo if needed for system keychain)
   local trust_settings
-  trust_settings="$(sudo security trust-settings-export -d 2>/dev/null 2>&1)"
-  local trust_export_status=$?
-  
-  if [[ $trust_export_status -eq 0 && -n "$trust_settings" ]]; then
-    # Trust settings export succeeded - search for our certificate
-    local cert_cn
-    cert_cn="$(_ssl.get_cert_cn "$cert_path")"
-    
-    # Search for fingerprint or CN in trust settings
-    if echo "$trust_settings" | grep -qiE "($cert_fingerprint|$cert_cn)" 2>/dev/null; then
-      return 0
-    fi
-  fi
-
-  # Method 2: Try a test trust operation to see if it's already trusted
-  # Extract cert to temp file and try to verify trust
-  local temp_cert
-  temp_cert="$(mktemp)" || return 1
-  
-  if security find-certificate -a -Z "$cert_fingerprint" -p "$keychain" > "$temp_cert" 2>/dev/null; then
-    # Try verify-cert - for self-signed certs in system keychain that are trusted,
-    # this might succeed. However, verify-cert can be unreliable for self-signed.
-    # We'll use it as a hint, not definitive proof.
-    if security verify-cert -c "$temp_cert" >/dev/null 2>&1; then
-      rm -f "$temp_cert"
-      return 0
-    fi
+  if [[ "$needs_sudo" == true ]]; then
+    trust_settings="$(sudo security trust-settings-export -d 2>/dev/null 2>&1)"
+  else
+    trust_settings="$(security trust-settings-export -d 2>/dev/null 2>&1)"
   fi
   
-  rm -f "$temp_cert"
+  if [[ $? -ne 0 || -z "$trust_settings" ]]; then
+    # Failed to export trust settings - cannot determine trust status
+    return 1
+  fi
 
-  # Method 3: Heuristic for system keychain
-  # If the certificate is in the system keychain and we can't determine trust via CLI,
-  # we'll assume it might be trusted if it was added recently or if trust-settings-export
-  # is not available. However, to be safe, we'll return 1 and let the trust function
-  # handle it (it's idempotent).
-  #
-  # The issue is that macOS doesn't provide a reliable CLI way to check trust for
-  # system keychain certificates. The trust function will try to trust it, and
-  # if it's already trusted, `add-trusted-cert -d` should handle it gracefully.
+  # Search for our certificate in trust settings
+  local cert_cn
+  cert_cn="$(_ssl.get_cert_cn "$cert_path")"
   
+  # Search for fingerprint or CN in trust settings
+  if echo "$trust_settings" | grep -qiE "($cert_fingerprint|$cert_cn)" 2>/dev/null; then
+    return 0
+  fi
+
+  # Certificate not found in trust settings - not trusted
   return 1
 }
 
