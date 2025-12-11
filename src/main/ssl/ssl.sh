@@ -594,6 +594,73 @@ ssl.is_cert_in_keychain() {
 }
 
 
+## @function: ssl.is_cert_trusted(cert_path)
+##
+## @description: Check if a certificate is trusted in the macOS keychain
+##
+## @param: $1 - Path to certificate file
+##
+## @return: 0 if certificate is trusted, 1 if not (or on non-macOS)
+ssl.is_cert_trusted() {
+  local cert_path="$1"
+
+  if [[ -z "$cert_path" ]]; then
+    return 1
+  fi
+
+  if [[ ! -f "$cert_path" ]]; then
+    return 1
+  fi
+
+  if [[ "$(uname)" != "Darwin" ]]; then
+    return 1  # Not macOS, skip check
+  fi
+
+  if ! command -v security >/dev/null 2>&1; then
+    return 1  # security command not available
+  fi
+
+  local keychain
+  keychain="$(_ssl.get_keychain_path)"
+
+  if [[ ! -f "$keychain" ]]; then
+    return 1  # Keychain not found
+  fi
+
+  # Get SHA-1 fingerprint to uniquely identify this certificate
+  local cert_fingerprint
+  cert_fingerprint="$(_ssl.get_cert_fingerprint "$cert_path")"
+  
+  if [[ -z "$cert_fingerprint" ]]; then
+    return 1
+  fi
+
+  # Check trust settings for the certificate
+  # If the certificate is trusted, the trust settings will show "trustRoot" or similar
+  local trust_output
+  trust_output="$(security trust-settings-export -d 2>/dev/null | grep -i "$cert_fingerprint" || echo "")"
+  
+  if [[ -n "$trust_output" ]]; then
+    # Certificate has trust settings configured
+    return 0
+  fi
+
+  # Alternative: Check if certificate exists and try to verify trust via find-certificate
+  # This is a fallback method
+  local cert_info
+  cert_info="$(security find-certificate -a -Z "$cert_fingerprint" "$keychain" 2>/dev/null || echo "")"
+  
+  if [[ -n "$cert_info" ]]; then
+    # Certificate is in keychain, but we can't definitively check trust via CLI
+    # For system keychain, if it's added via add-trusted-cert, it should be trusted
+    # We'll return 1 here and let the trust function handle it
+    return 1
+  fi
+
+  return 1
+}
+
+
 ## @function: ssl.add_cert_to_keychain_macos(cert_path)
 ##
 ## @description: Add a certificate to macOS keychain without trusting it
@@ -723,14 +790,20 @@ ssl.trust_cert_macos() {
     error.throw "Could not extract certificate fingerprint from: $cert_path" 1
   fi
 
-  # Check if we're in an interactive terminal
-  local is_interactive=false
-  if [[ -t 0 ]] && [[ -t 1 ]]; then
-    is_interactive=true
+  # For system keychain, if certificate is already added, we need to remove it first
+  # then re-add it with trust settings, OR use trust-settings-import
+  # The -d flag allows updating existing certificates
+  log.debug "Removing certificate from keychain to re-add with trust settings..."
+  sudo security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>/dev/null || log.debug "Certificate removal skipped (may not exist or already removed)"
+  
+  # Add certificate with trust settings in one step
+  # The -d flag allows duplicates/updates, -r trustRoot sets it as trusted root
+  if sudo security add-trusted-cert -d -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
+    log.info "✅ Certificate trusted successfully in macOS system keychain"
+    return 0
   fi
   
-  # Set trust settings for the certificate that's already in system keychain
-  # System keychain requires sudo/admin privileges
+  # If that failed, try without -d flag (in case cert was fully removed)
   if sudo security add-trusted-cert -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
     log.info "✅ Certificate trusted successfully in macOS system keychain"
     return 0
@@ -743,7 +816,11 @@ ssl.trust_cert_macos() {
   
   log.warning "Failed to set trust settings automatically"
   log.info "   Certificate is in keychain but trust settings may not be configured"
-  log.info "   Open Keychain Access and set the certificate to 'Always Trust'"
+  log.info "   Please manually set trust in Keychain Access:"
+  log.info "   1. Open Keychain Access"
+  log.info "   2. Select 'System' keychain"
+  log.info "   3. Find the certificate and double-click it"
+  log.info "   4. Expand 'Trust' section and set to 'Always Trust'"
   error.throw "Failed to trust certificate automatically - certificate exists but trust not configured. Please manually set trust in Keychain Access." 1
 }
 
