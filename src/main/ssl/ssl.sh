@@ -13,15 +13,11 @@ import "../tools/file.sh"
 
 ## @function: _ssl.get_keychain_path()
 ##
-## @description: Returns the macOS keychain path (login.keychain-db or login.keychain fallback)
+## @description: Returns the macOS system keychain path
 ##
-## @return: Path to the macOS login keychain
+## @return: Path to the macOS system keychain
 _ssl.get_keychain_path() {
-  local keychain="${HOME}/Library/Keychains/login.keychain-db"
-  if [[ ! -f "$keychain" ]]; then
-    keychain="${HOME}/Library/Keychains/login.keychain"
-  fi
-  echo "$keychain"
+  echo "/Library/Keychains/System.keychain"
 }
 
 ## @function: _ssl.get_cert_fingerprint(cert_path)
@@ -390,14 +386,24 @@ EOF
       error.throw "Failed to create temporary config file: $temp_config" 1
     fi
     
-    # Add SAN entries
-    local index=1
+    # Add SAN entries (support both DNS and IP addresses)
+    local dns_index=1
+    local ip_index=1
     for san in "${san_entries[@]}"; do
-      if ! echo "DNS.$index = $san" >> "$temp_config"; then
-        rm -f "$temp_config"
-        error.throw "Failed to write SAN entry to temporary config file: $temp_config" 1
+      # Check if it's an IP address (simple check: contains digits and dots)
+      if [[ "$san" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        if ! echo "IP.$ip_index = $san" >> "$temp_config"; then
+          rm -f "$temp_config"
+          error.throw "Failed to write SAN IP entry to temporary config file: $temp_config" 1
+        fi
+        ip_index=$((ip_index + 1))
+      else
+        if ! echo "DNS.$dns_index = $san" >> "$temp_config"; then
+          rm -f "$temp_config"
+          error.throw "Failed to write SAN DNS entry to temporary config file: $temp_config" 1
+        fi
+        dns_index=$((dns_index + 1))
       fi
-      index=$((index + 1))
     done
     
     # Generate certificate with config
@@ -477,19 +483,24 @@ ssl.generate_cert_with_config() {
 }
 
 
-## @function: ssl.ensure_cert(key_path, cert_path, days?)
+## @function: ssl.ensure_cert(key_path, cert_path, days?, cn?, san_array?)
 ##
 ## @description: Lazy certificate generation - only generates if files don't exist or are expired
 ##
 ## @param: $1 - Path to private key file
 ## @param: $2 - Path to certificate file
 ## @param: $3 - Optional number of days validity (default: 365)
+## @param: $4 - Optional Common Name (CN) for the certificate (default: localhost)
+## @param: $5+ - Optional Subject Alternative Names (SAN) - pass multiple DNS/IP names as additional arguments
 ##
 ## @return: null
 ssl.ensure_cert() {
   local key_path="$1"
   local cert_path="$2"
   local days="${3:-365}"
+  local cn="${4:-localhost}"
+  shift 4 2>/dev/null || shift 3 2>/dev/null || true
+  local san_entries=("$@")
 
   # Check if certificate files exist
   if [[ -f "$key_path" && -f "$cert_path" ]]; then
@@ -522,8 +533,8 @@ ssl.ensure_cert() {
     log.info "Generating new certificate..."
   fi
 
-  # Generate certificate - this will throw an error if it fails
-  ssl.generate_cert "$key_path" "$cert_path" "$days" || error.throw "Failed to generate SSL certificate: $cert_path" 1
+  # Generate certificate with SAN entries - this will throw an error if it fails
+  ssl.generate_cert "$key_path" "$cert_path" "$days" "$cn" "${san_entries[@]}" || error.throw "Failed to generate SSL certificate: $cert_path" 1
 }
 
 
@@ -614,21 +625,23 @@ ssl.add_cert_to_keychain_macos() {
     return 0
   fi
 
-  log.info "Adding certificate to macOS keychain: $cert_path"
+  log.info "Adding certificate to macOS system keychain: $cert_path"
+  log.info "⚠️  This requires administrator privileges (sudo)"
   
-  # Add certificate to keychain without trust settings
-  if security add-certificates -k "$keychain" "$cert_path" 2>/dev/null; then
-    log.info "✅ Certificate added to keychain successfully"
+  # Add certificate to system keychain without trust settings
+  # System keychain requires sudo/admin privileges
+  if sudo security add-certificates -k "$keychain" "$cert_path" 2>/dev/null; then
+    log.info "✅ Certificate added to system keychain successfully"
     return 0
   fi
 
   # Fallback: try using import (for .p12 or other formats, but also works for .crt)
-  if security import "$cert_path" -k "$keychain" -T /usr/bin/security 2>/dev/null; then
-    log.info "✅ Certificate added to keychain successfully"
+  if sudo security import "$cert_path" -k "$keychain" -T /usr/bin/security 2>/dev/null; then
+    log.info "✅ Certificate added to system keychain successfully"
     return 0
   fi
 
-  error.throw "Failed to add certificate to keychain: $cert_path" 1
+  error.throw "Failed to add certificate to system keychain: $cert_path (requires sudo/admin privileges)" 1
 }
 
 
@@ -699,8 +712,8 @@ ssl.trust_cert_macos() {
     error.throw "Certificate is not in keychain. Please add it first using ssl.add_cert_to_keychain: $cert_path" 1
   fi
 
-  log.info "Trusting certificate in macOS keychain: $cert_path"
-  log.info "⚠️  A security dialog should appear - please approve the certificate trust"
+  log.info "Trusting certificate in macOS system keychain: $cert_path"
+  log.info "⚠️  This requires administrator privileges (sudo)"
   
   # Get SHA-1 fingerprint to uniquely identify this certificate
   local cert_fingerprint
@@ -716,11 +729,10 @@ ssl.trust_cert_macos() {
     is_interactive=true
   fi
   
-  # Set trust settings for the certificate that's already in keychain
-  # We need to use security add-trusted-cert with the certificate file
-  # This will update trust settings for the existing certificate
-  if security add-trusted-cert -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
-    log.info "✅ Certificate trusted successfully in macOS keychain"
+  # Set trust settings for the certificate that's already in system keychain
+  # System keychain requires sudo/admin privileges
+  if sudo security add-trusted-cert -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
+    log.info "✅ Certificate trusted successfully in macOS system keychain"
     return 0
   fi
   
