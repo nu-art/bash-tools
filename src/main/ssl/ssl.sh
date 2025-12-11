@@ -704,47 +704,23 @@ ssl.is_cert_trusted() {
     error.throw "Failed to export trust settings - cannot determine trust status" 1
   fi
 
-  # Read trust settings from the file
-  local trust_settings
-  if [[ ! -f "$temp_trust_file" || ! -s "$temp_trust_file" ]]; then
-    rm -f "$temp_trust_file"
-    error.throw "Failed to read trust settings from temporary file" 1
-  fi
-  
-  trust_settings="$(cat "$temp_trust_file" 2>/dev/null)"
+  # Filter trust settings for fingerprint key or integer 1/3
+  local filtered
+  filtered="$(grep -E "key>$cert_fingerprint|integer>1|integer>3" "$temp_trust_file")"
   rm -f "$temp_trust_file"
 
-  if [[ -z "$trust_settings" ]]; then
-    error.throw "Failed to read trust settings from temporary file" 1
-  fi
-
-  # Search for our certificate in trust settings
-  # The fingerprint appears as a key in the trustList, and if it has trustSettings, it's trusted
-  # We need to check if the fingerprint key exists AND has a trustSettings array
+  # Find the first integer (1 or 3) that appears after the fingerprint key
+  # 1 = trusted, 3 = not trusted
+  local trust_result
+  trust_result="$(echo "$filtered" | sed -n "/key>$cert_fingerprint/,/integer>[13]/p" | grep "integer>" | head -1 | sed 's/.*integer>\([13]\)<.*/\1/')"
   
-  # Check if fingerprint appears as a key (indicating it's in the trust list)
-  if ! echo "$trust_settings" | grep -q "<key>$cert_fingerprint</key>" 2>/dev/null; then
-    # Certificate not found in trust settings - not trusted
-    return 1
-  fi
-  
-  # If the fingerprint key exists, check if it has trustSettings
-  # Extract the section for this certificate's fingerprint
-  local cert_section
-  cert_section="$(echo "$trust_settings" | sed -n "/<key>$cert_fingerprint<\/key>/,/<\/dict>/p" 2>/dev/null)"
-  
-  if [[ -z "$cert_section" ]]; then
-    # Couldn't extract certificate section - not trusted
-    return 1
-  fi
-  
-  # Check if this certificate has trustSettings (if it does, it's trusted)
-  if echo "$cert_section" | grep -q "<key>trustSettings</key>" 2>/dev/null; then
-    # Certificate has trust settings - it's trusted
+  # Check the trust result: 1 = trusted, 3 = not trusted
+  if [[ "$trust_result" == "1" ]]; then
     return 0
+  elif [[ "$trust_result" == "3" ]]; then
+    return 1
   fi
-
-  # Certificate found but no trust settings - not trusted
+  
   return 1
 }
 
