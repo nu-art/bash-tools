@@ -562,7 +562,7 @@ ssl.has_cert() {
   local cert_path="$1"
   
   if [[ -z "$cert_path" ]]; then
-    return 1
+    error.throw "Missing argument: cert_path='$cert_path'" 1
   fi
   
   if [[ -f "$cert_path" ]]; then
@@ -586,26 +586,26 @@ ssl.is_cert_in_keychain() {
   local keychain_type="${2:-login}"
 
   if [[ -z "$cert_path" ]]; then
-    return 1
+    error.throw "Missing argument: cert_path='$cert_path'" 1
   fi
 
   if [[ ! -f "$cert_path" ]]; then
-    return 1
+    return 1  # Certificate file doesn't exist - not in keychain
   fi
 
   if [[ "$(uname)" != "Darwin" ]]; then
-    return 1  # Not macOS, skip check
+    return 1  # Not macOS - cannot check keychain
   fi
 
   if ! command -v security >/dev/null 2>&1; then
-    return 1  # security command not available
+    error.throw "security command is not available (required for keychain operations)" 1
   fi
 
   local keychain
   keychain="$(_ssl.get_keychain_path "$keychain_type")"
 
   if [[ ! -f "$keychain" ]]; then
-    return 1  # Keychain not found
+    error.throw "Keychain not found: $keychain" 1
   fi
 
   # Get SHA-1 fingerprint to uniquely identify this certificate
@@ -644,26 +644,26 @@ ssl.is_cert_trusted() {
   local keychain_type="${2:-login}"
 
   if [[ -z "$cert_path" ]]; then
-    return 1
+    error.throw "Missing argument: cert_path='$cert_path'" 1
   fi
 
   if [[ ! -f "$cert_path" ]]; then
-    return 1
+    return 1  # Certificate file doesn't exist - not trusted
   fi
 
   if [[ "$(uname)" != "Darwin" ]]; then
-    return 1  # Not macOS, skip check
+    return 1  # Not macOS - cannot check trust
   fi
 
   if ! command -v security >/dev/null 2>&1; then
-    return 1  # security command not available
+    error.throw "security command is not available (required for trust operations)" 1
   fi
 
   local keychain
   keychain="$(_ssl.get_keychain_path "$keychain_type")"
 
   if [[ ! -f "$keychain" ]]; then
-    return 1  # Keychain not found
+    error.throw "Keychain not found: $keychain" 1
   fi
 
   # Get SHA-1 fingerprint to uniquely identify this certificate
@@ -671,27 +671,50 @@ ssl.is_cert_trusted() {
   cert_fingerprint="$(_ssl.get_cert_fingerprint "$cert_path")"
   
   if [[ -z "$cert_fingerprint" ]]; then
-    return 1
+    error.throw "Failed to extract certificate fingerprint from: $cert_path" 1
   fi
 
-  # First, verify the certificate is in the keychain
-  if ! security find-certificate -Z "$cert_fingerprint" "$keychain" >/dev/null 2>&1; then
-    # Certificate not in keychain, so definitely not trusted
-    return 1
-  fi
-
-  # System keychain requires sudo to read trust settings
+  # Export trust settings to a temporary file
+  # trust-settings-export writes to a file, not stdout
+  # mktemp creates a temporary file in /tmp (or system temp dir) and returns its path
+  # Example: /var/folders/.../tmp.XXXXXX or /tmp/tmp.XXXXXX
+  local temp_trust_file
+  temp_trust_file="$(mktemp)" || error.throw "Failed to create temporary file for trust settings export" 1
+  log.debug "Using temporary file for trust settings export: $temp_trust_file"
+  
   # Export trust settings (with sudo if system keychain, without if login keychain)
-  local trust_settings
+  # -d flag exports admin trust settings, -s flag exports system trust settings
+  local export_success=false
   if [[ "$keychain_type" == "system" ]]; then
-    trust_settings="$(sudo security trust-settings-export -d 2>/dev/null 2>&1)"
+    # System keychain: use -s for system trust settings, requires sudo
+    if sudo security trust-settings-export -s "$temp_trust_file" 2>/dev/null; then
+      export_success=true
+    fi
   else
-    trust_settings="$(security trust-settings-export -d 2>/dev/null 2>&1)"
+    # Login keychain: use -d for admin trust settings (user admin domain)
+    if security trust-settings-export -d "$temp_trust_file" 2>/dev/null; then
+      export_success=true
+    fi
   fi
   
-  if [[ $? -ne 0 || -z "$trust_settings" ]]; then
+  if [[ "$export_success" == false ]]; then
+    rm -f "$temp_trust_file"
     # Failed to export trust settings - cannot determine trust status
-    return 1
+    error.throw "Failed to export trust settings - cannot determine trust status" 1
+  fi
+
+  # Read trust settings from the file
+  local trust_settings
+  if [[ ! -f "$temp_trust_file" || ! -s "$temp_trust_file" ]]; then
+    rm -f "$temp_trust_file"
+    error.throw "Failed to read trust settings from temporary file" 1
+  fi
+  
+  trust_settings="$(cat "$temp_trust_file" 2>/dev/null)"
+  rm -f "$temp_trust_file"
+
+  if [[ -z "$trust_settings" ]]; then
+    error.throw "Failed to read trust settings from temporary file" 1
   fi
 
   # Search for our certificate in trust settings
@@ -834,23 +857,15 @@ _ssl.remove_cert_from_keychain_macos() {
   fi
 
   if [[ ! -f "$cert_path" ]]; then
-    log.warning "Certificate file does not exist: $cert_path (skipping removal)"
-    return 0
+    error.throw "Certificate file does not exist: $cert_path (skipping removal)" 1
   fi
 
   if ! command -v security >/dev/null 2>&1; then
-    log.warning "security command is not available (not on macOS?) - skipping removal"
-    return 0
+    error.throw "security command is not available (not on macOS?) - skipping removal" 1
   fi
 
   local keychain
   keychain="$(_ssl.get_keychain_path "$keychain_type")"
-
-  # Check if certificate is in keychain
-  if ! ssl.is_cert_in_keychain "$cert_path" "$keychain_type"; then
-    log.debug "Certificate is not in keychain: $cert_path"
-    return 0
-  fi
 
   local keychain_name
   if [[ "$keychain_type" == "system" ]]; then
@@ -968,17 +983,6 @@ _ssl.trust_cert_macos() {
   local keychain
   keychain="$(_ssl.get_keychain_path "$keychain_type")"
 
-  # Certificate must be in keychain before we can trust it
-  if ! ssl.is_cert_in_keychain "$cert_path" "$keychain_type"; then
-    error.throw "Certificate is not in keychain. Please add it first using ssl.add_cert_to_keychain: $cert_path" 1
-  fi
-
-  # Check if already trusted
-  if ssl.is_cert_trusted "$cert_path" "$keychain_type"; then
-    log.debug "Certificate is already trusted"
-    return 0
-  fi
-
   local keychain_name
   if [[ "$keychain_type" == "system" ]]; then
     keychain_name="system keychain"
@@ -1075,36 +1079,26 @@ _ssl.trust_cert_linux() {
   log.info "Adding certificate to Linux CA bundle: $cert_path"
 
   if [[ ! -d "$ca_cert_dir" ]]; then
-    log.warning "CA certificates directory does not exist: $ca_cert_dir"
-    log.info "You may need to create it manually or use a different method"
-    return 1
+    error.throw "CA certificates directory does not exist: $ca_cert_dir. Please create it manually or use a different method." 1
   fi
 
   # Copy certificate to CA directory (requires sudo)
-  if sudo cp "$cert_path" "$ca_cert_path" 2>/dev/null; then
-    log.info "Certificate copied to $ca_cert_path"
-    
-    # Update CA certificates
-    if command -v update-ca-certificates >/dev/null 2>&1; then
-      if sudo update-ca-certificates 2>/dev/null; then
-        log.info "✅ Certificate trusted successfully in Linux CA bundle"
-      else
-        log.warning "Failed to update CA certificates"
-        log.info "You may need to run manually: sudo update-ca-certificates"
-        return 1
-      fi
-    else
-      log.warning "update-ca-certificates command not found"
-      log.info "You may need to manually update your CA bundle"
-      return 1
-    fi
-  else
-    log.warning "Failed to copy certificate (requires sudo)"
-    log.info "You may need to run manually:"
-    log.info "  sudo cp '$cert_path' '$ca_cert_path'"
-    log.info "  sudo update-ca-certificates"
-    return 1
+  if ! sudo cp "$cert_path" "$ca_cert_path" 2>/dev/null; then
+    error.throw "Failed to copy certificate to CA directory (requires sudo): $ca_cert_path. Please run manually: sudo cp '$cert_path' '$ca_cert_path' && sudo update-ca-certificates" 1
   fi
+  
+  log.info "Certificate copied to $ca_cert_path"
+  
+  # Update CA certificates
+  if ! command -v update-ca-certificates >/dev/null 2>&1; then
+    error.throw "update-ca-certificates command not found. Please install it or manually update your CA bundle." 1
+  fi
+  
+  if ! sudo update-ca-certificates 2>/dev/null; then
+    error.throw "Failed to update CA certificates. Please run manually: sudo update-ca-certificates" 1
+  fi
+  
+  log.info "✅ Certificate trusted successfully in Linux CA bundle"
 }
 
 
@@ -1151,13 +1145,11 @@ _ssl.untrust_cert_macos() {
   fi
 
   if [[ ! -f "$cert_path" ]]; then
-    log.warning "Certificate file does not exist: $cert_path (skipping untrust)"
-    return 0
+    error.throw "Certificate file does not exist: $cert_path (skipping untrust)" 1
   fi
 
   if ! command -v security >/dev/null 2>&1; then
-    log.warning "security command is not available (not on macOS?) - skipping untrust"
-    return 0
+    error.throw "security command is not available (not on macOS?) - skipping untrust" 1
   fi
 
   local keychain
@@ -1250,8 +1242,7 @@ _ssl.untrust_cert_linux() {
   log.info "Removing certificate from Linux CA bundle: $cert_path"
 
   if [[ ! -d "$ca_cert_dir" ]]; then
-    log.debug "CA certificates directory does not exist: $ca_cert_dir (certificate may not be trusted)"
-    return 0
+    error.throw "CA certificates directory does not exist: $ca_cert_dir (certificate may not be trusted)" 1
   fi
 
   # Remove certificate from CA directory (requires sudo)
