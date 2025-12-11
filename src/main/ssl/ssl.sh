@@ -712,22 +712,39 @@ ssl.is_cert_trusted() {
   fi
   
   trust_settings="$(cat "$temp_trust_file" 2>/dev/null)"
-#  rm -f "$temp_trust_file"
+  rm -f "$temp_trust_file"
 
   if [[ -z "$trust_settings" ]]; then
     error.throw "Failed to read trust settings from temporary file" 1
   fi
 
   # Search for our certificate in trust settings
-  local cert_cn
-  cert_cn="$(_ssl.get_cert_cn "$cert_path")"
+  # The fingerprint appears as a key in the trustList, and if it has trustSettings, it's trusted
+  # We need to check if the fingerprint key exists AND has a trustSettings array
   
-  # Search for fingerprint or CN in trust settings
-  if echo "$trust_settings" | grep -qiE "($cert_fingerprint|$cert_cn)" 2>/dev/null; then
+  # Check if fingerprint appears as a key (indicating it's in the trust list)
+  if ! echo "$trust_settings" | grep -q "<key>$cert_fingerprint</key>" 2>/dev/null; then
+    # Certificate not found in trust settings - not trusted
+    return 1
+  fi
+  
+  # If the fingerprint key exists, check if it has trustSettings
+  # Extract the section for this certificate's fingerprint
+  local cert_section
+  cert_section="$(echo "$trust_settings" | sed -n "/<key>$cert_fingerprint<\/key>/,/<\/dict>/p" 2>/dev/null)"
+  
+  if [[ -z "$cert_section" ]]; then
+    # Couldn't extract certificate section - not trusted
+    return 1
+  fi
+  
+  # Check if this certificate has trustSettings (if it does, it's trusted)
+  if echo "$cert_section" | grep -q "<key>trustSettings</key>" 2>/dev/null; then
+    # Certificate has trust settings - it's trusted
     return 0
   fi
 
-  # Certificate not found in trust settings - not trusted
+  # Certificate found but no trust settings - not trusted
   return 1
 }
 
