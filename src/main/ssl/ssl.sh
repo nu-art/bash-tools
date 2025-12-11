@@ -11,13 +11,26 @@ import "../tools/file.sh"
 # Private Helper Functions
 # ============================================================================
 
-## @function: _ssl.get_keychain_path()
+## @function: _ssl.get_keychain_path(keychain_type?)
 ##
-## @description: Returns the macOS system keychain path
+## @description: Returns the macOS keychain path based on type
 ##
-## @return: Path to the macOS system keychain
+## @param: $1 - Optional keychain type: "login" (default) or "system"
+##
+## @return: Path to the macOS keychain
 _ssl.get_keychain_path() {
-  echo "/Library/Keychains/System.keychain"
+  local keychain_type="${1:-login}"
+  
+  if [[ "$keychain_type" == "system" ]]; then
+    echo "/Library/Keychains/System.keychain"
+  else
+    # Default to login keychain (user keychain)
+    local login_keychain="${HOME}/Library/Keychains/login.keychain-db"
+    if [[ ! -f "$login_keychain" ]]; then
+      login_keychain="${HOME}/Library/Keychains/login.keychain"
+    fi
+    echo "$login_keychain"
+  fi
 }
 
 ## @function: _ssl.get_cert_fingerprint(cert_path)
@@ -560,15 +573,17 @@ ssl.has_cert() {
 }
 
 
-## @function: ssl.is_cert_in_keychain(cert_path)
+## @function: ssl.is_cert_in_keychain(cert_path, keychain_type?)
 ##
 ## @description: Check if a certificate is already in the macOS keychain
 ##
 ## @param: $1 - Path to certificate file
+## @param: $2 - Optional keychain type: "login" (default) or "system"
 ##
 ## @return: 0 if certificate is in keychain, 1 if not (or on non-macOS)
 ssl.is_cert_in_keychain() {
   local cert_path="$1"
+  local keychain_type="${2:-login}"
 
   if [[ -z "$cert_path" ]]; then
     return 1
@@ -587,7 +602,7 @@ ssl.is_cert_in_keychain() {
   fi
 
   local keychain
-  keychain="$(_ssl.get_keychain_path)"
+  keychain="$(_ssl.get_keychain_path "$keychain_type")"
 
   if [[ ! -f "$keychain" ]]; then
     return 1  # Keychain not found
@@ -616,15 +631,17 @@ ssl.is_cert_in_keychain() {
 }
 
 
-## @function: ssl.is_cert_trusted(cert_path)
+## @function: ssl.is_cert_trusted(cert_path, keychain_type?)
 ##
 ## @description: Check if a certificate is trusted in the macOS keychain
 ##
 ## @param: $1 - Path to certificate file
+## @param: $2 - Optional keychain type: "login" (default) or "system"
 ##
 ## @return: 0 if certificate is trusted, 1 if not (or on non-macOS)
 ssl.is_cert_trusted() {
   local cert_path="$1"
+  local keychain_type="${2:-login}"
 
   if [[ -z "$cert_path" ]]; then
     return 1
@@ -643,7 +660,7 @@ ssl.is_cert_trusted() {
   fi
 
   local keychain
-  keychain="$(_ssl.get_keychain_path)"
+  keychain="$(_ssl.get_keychain_path "$keychain_type")"
 
   if [[ ! -f "$keychain" ]]; then
     return 1  # Keychain not found
@@ -664,15 +681,9 @@ ssl.is_cert_trusted() {
   fi
 
   # System keychain requires sudo to read trust settings
-  # Determine if we need sudo based on keychain path
-  local needs_sudo=false
-  if [[ "$keychain" == "/Library/Keychains/System.keychain" ]]; then
-    needs_sudo=true
-  fi
-
-  # Export trust settings (with sudo if needed for system keychain)
+  # Export trust settings (with sudo if system keychain, without if login keychain)
   local trust_settings
-  if [[ "$needs_sudo" == true ]]; then
+  if [[ "$keychain_type" == "system" ]]; then
     trust_settings="$(sudo security trust-settings-export -d 2>/dev/null 2>&1)"
   else
     trust_settings="$(security trust-settings-export -d 2>/dev/null 2>&1)"
@@ -697,15 +708,17 @@ ssl.is_cert_trusted() {
 }
 
 
-## @function: _ssl.add_cert_to_keychain_macos(cert_path)
+## @function: _ssl.add_cert_to_keychain_macos(cert_path, keychain_type?)
 ##
 ## @description: [PRIVATE] Add a certificate to macOS keychain without trusting it
 ##
 ## @param: $1 - Path to certificate file
+## @param: $2 - Optional keychain type: "login" (default) or "system"
 ##
 ## @return: null
 _ssl.add_cert_to_keychain_macos() {
   local cert_path="$1"
+  local keychain_type="${2:-login}"
 
   if [[ -z "$cert_path" ]]; then
     error.throw "Missing argument: cert_path='$cert_path'" 1
@@ -720,31 +733,48 @@ _ssl.add_cert_to_keychain_macos() {
   fi
 
   local keychain
-  keychain="$(_ssl.get_keychain_path)"
+  keychain="$(_ssl.get_keychain_path "$keychain_type")"
 
   # Check if already in keychain
-  if ssl.is_cert_in_keychain "$cert_path"; then
+  if ssl.is_cert_in_keychain "$cert_path" "$keychain_type"; then
     log.debug "Certificate is already in keychain"
     return 0
   fi
 
-  log.info "Adding certificate to macOS system keychain: $cert_path"
-  log.info "⚠️  This requires administrator privileges (sudo)"
+  local keychain_name
+  if [[ "$keychain_type" == "system" ]]; then
+    keychain_name="system keychain"
+    log.info "Adding certificate to macOS system keychain: $cert_path"
+    log.info "⚠️  This requires administrator privileges (sudo)"
+  else
+    keychain_name="login keychain"
+    log.info "Adding certificate to macOS login keychain: $cert_path"
+  fi
   
-  # Add certificate to system keychain without trust settings
-  # System keychain requires sudo/admin privileges
-  if sudo security add-certificates -k "$keychain" "$cert_path" 2>/dev/null; then
-    log.info "✅ Certificate added to system keychain successfully"
-    return 0
+  # Add certificate to keychain (with sudo if system keychain, without if login)
+  if [[ "$keychain_type" == "system" ]]; then
+    if sudo security add-certificates -k "$keychain" "$cert_path" 2>/dev/null; then
+      log.info "✅ Certificate added to $keychain_name successfully"
+      return 0
+    fi
+    # Fallback: try using import
+    if sudo security import "$cert_path" -k "$keychain" -T /usr/bin/security 2>/dev/null; then
+      log.info "✅ Certificate added to $keychain_name successfully"
+      return 0
+    fi
+    error.throw "Failed to add certificate to system keychain: $cert_path (requires sudo/admin privileges)" 1
+  else
+    if security add-certificates -k "$keychain" "$cert_path" 2>/dev/null; then
+      log.info "✅ Certificate added to $keychain_name successfully"
+      return 0
+    fi
+    # Fallback: try using import
+    if security import "$cert_path" -k "$keychain" -T /usr/bin/security 2>/dev/null; then
+      log.info "✅ Certificate added to $keychain_name successfully"
+      return 0
+    fi
+    error.throw "Failed to add certificate to login keychain: $cert_path" 1
   fi
-
-  # Fallback: try using import (for .p12 or other formats, but also works for .crt)
-  if sudo security import "$cert_path" -k "$keychain" -T /usr/bin/security 2>/dev/null; then
-    log.info "✅ Certificate added to system keychain successfully"
-    return 0
-  fi
-
-  error.throw "Failed to add certificate to system keychain: $cert_path (requires sudo/admin privileges)" 1
 }
 
 
@@ -763,37 +793,41 @@ _ssl.add_cert_to_keychain_linux() {
 }
 
 
-## @function: ssl.add_cert_to_keychain(cert_path)
+## @function: ssl.add_cert_to_keychain(cert_path, keychain_type?)
 ##
 ## @description: Platform-aware function to add certificate to keychain without trusting
 ##
 ## @param: $1 - Path to certificate file
+## @param: $2 - Optional keychain type: "login" (default) or "system"
 ##
 ## @return: null
 ssl.add_cert_to_keychain() {
   local cert_path="$1"
+  local keychain_type="${2:-login}"
 
   if [[ -z "$cert_path" ]]; then
     error.throw "Missing argument: cert_path='$cert_path'" 1
   fi
 
   if [[ $(isMacOS) ]]; then
-    _ssl.add_cert_to_keychain_macos "$cert_path"
+    _ssl.add_cert_to_keychain_macos "$cert_path" "$keychain_type"
   else
     _ssl.add_cert_to_keychain_linux "$cert_path"
   fi
 }
 
 
-## @function: _ssl.remove_cert_from_keychain_macos(cert_path)
+## @function: _ssl.remove_cert_from_keychain_macos(cert_path, keychain_type?)
 ##
 ## @description: [PRIVATE] Remove a certificate from macOS keychain (without untrusting - just removes)
 ##
 ## @param: $1 - Path to certificate file
+## @param: $2 - Optional keychain type: "login" (default) or "system"
 ##
 ## @return: null
 _ssl.remove_cert_from_keychain_macos() {
   local cert_path="$1"
+  local keychain_type="${2:-login}"
 
   if [[ -z "$cert_path" ]]; then
     error.throw "Missing argument: cert_path='$cert_path'" 1
@@ -810,16 +844,23 @@ _ssl.remove_cert_from_keychain_macos() {
   fi
 
   local keychain
-  keychain="$(_ssl.get_keychain_path)"
+  keychain="$(_ssl.get_keychain_path "$keychain_type")"
 
   # Check if certificate is in keychain
-  if ! ssl.is_cert_in_keychain "$cert_path"; then
+  if ! ssl.is_cert_in_keychain "$cert_path" "$keychain_type"; then
     log.debug "Certificate is not in keychain: $cert_path"
     return 0
   fi
 
-  log.info "Removing certificate from macOS system keychain: $cert_path"
-  log.info "⚠️  This requires administrator privileges (sudo)"
+  local keychain_name
+  if [[ "$keychain_type" == "system" ]]; then
+    keychain_name="system keychain"
+    log.info "Removing certificate from macOS system keychain: $cert_path"
+    log.info "⚠️  This requires administrator privileges (sudo)"
+  else
+    keychain_name="login keychain"
+    log.info "Removing certificate from macOS login keychain: $cert_path"
+  fi
   
   # Get SHA-1 fingerprint to uniquely identify this certificate
   local cert_fingerprint
@@ -830,22 +871,35 @@ _ssl.remove_cert_from_keychain_macos() {
     local cert_cn
     cert_cn="$(_ssl.get_cert_cn "$cert_path")"
     
-    if sudo security delete-certificate -c "$cert_cn" "$keychain" 2>/dev/null; then
-      log.info "✅ Certificate removed from system keychain successfully"
-      return 0
+    if [[ "$keychain_type" == "system" ]]; then
+      if sudo security delete-certificate -c "$cert_cn" "$keychain" 2>/dev/null; then
+        log.info "✅ Certificate removed from $keychain_name successfully"
+        return 0
+      fi
     else
-      log.debug "Certificate not found in keychain or already removed: $cert_cn"
+      if security delete-certificate -c "$cert_cn" "$keychain" 2>/dev/null; then
+        log.info "✅ Certificate removed from $keychain_name successfully"
+        return 0
+      fi
+    fi
+    log.debug "Certificate not found in keychain or already removed: $cert_cn"
+    return 0
+  fi
+
+  if [[ "$keychain_type" == "system" ]]; then
+    if sudo security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>/dev/null; then
+      log.info "✅ Certificate removed from $keychain_name successfully"
+      return 0
+    fi
+  else
+    if security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>/dev/null; then
+      log.info "✅ Certificate removed from $keychain_name successfully"
       return 0
     fi
   fi
-
-  if sudo security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>/dev/null; then
-    log.info "✅ Certificate removed from system keychain successfully"
-    return 0
-  else
-    log.debug "Certificate not found in keychain or already removed (fingerprint: ${cert_fingerprint:0:8}...)"
-    return 0
-  fi
+  
+  log.debug "Certificate not found in keychain or already removed (fingerprint: ${cert_fingerprint:0:8}...)"
+  return 0
 }
 
 
@@ -861,39 +915,43 @@ _ssl.remove_cert_from_keychain_linux() {
 }
 
 
-## @function: ssl.remove_cert_from_keychain(cert_path)
+## @function: ssl.remove_cert_from_keychain(cert_path, keychain_type?)
 ##
 ## @description: Platform-aware function to remove certificate from keychain
 ##
 ## @param: $1 - Path to certificate file
+## @param: $2 - Optional keychain type: "login" (default) or "system"
 ##
 ## @return: null
 ssl.remove_cert_from_keychain() {
   local cert_path="$1"
+  local keychain_type="${2:-login}"
 
   if [[ -z "$cert_path" ]]; then
     error.throw "Missing argument: cert_path='$cert_path'" 1
   fi
 
   if [[ $(isMacOS) ]]; then
-    _ssl.remove_cert_from_keychain_macos "$cert_path"
+    _ssl.remove_cert_from_keychain_macos "$cert_path" "$keychain_type"
   else
     _ssl.remove_cert_from_keychain_linux "$cert_path"
   fi
 }
 
 
-## @function: _ssl.trust_cert_macos(cert_path)
+## @function: _ssl.trust_cert_macos(cert_path, keychain_type?)
 ##
 ## @description: [PRIVATE] Trust a certificate that is already in the macOS keychain. This function ONLY trusts - it does NOT add certificates. If the certificate is not in the keychain, this function will fail with an error.
 ##
 ## @param: $1 - Path to certificate file
+## @param: $2 - Optional keychain type: "login" (default) or "system"
 ##
 ## @return: null (throws error if certificate is not in keychain)
 ##
 ## @note: Certificate must be added to keychain first using ssl.add_cert_to_keychain()
 _ssl.trust_cert_macos() {
   local cert_path="$1"
+  local keychain_type="${2:-login}"
 
   if [[ -z "$cert_path" ]]; then
     error.throw "Missing argument: cert_path='$cert_path'" 1
@@ -908,14 +966,28 @@ _ssl.trust_cert_macos() {
   fi
 
   local keychain
-  keychain="$(_ssl.get_keychain_path)"
+  keychain="$(_ssl.get_keychain_path "$keychain_type")"
 
-  # Note: Even if is_cert_trusted returns false, the certificate might still be trusted
-  # (due to limitations in checking system keychain trust via CLI). The trust operation
-  # below should be idempotent - if already trusted, it should succeed without changes.
+  # Certificate must be in keychain before we can trust it
+  if ! ssl.is_cert_in_keychain "$cert_path" "$keychain_type"; then
+    error.throw "Certificate is not in keychain. Please add it first using ssl.add_cert_to_keychain: $cert_path" 1
+  fi
 
-  log.info "Trusting certificate in macOS system keychain: $cert_path"
-  log.info "⚠️  This requires administrator privileges (sudo)"
+  # Check if already trusted
+  if ssl.is_cert_trusted "$cert_path" "$keychain_type"; then
+    log.debug "Certificate is already trusted"
+    return 0
+  fi
+
+  local keychain_name
+  if [[ "$keychain_type" == "system" ]]; then
+    keychain_name="system keychain"
+    log.info "Trusting certificate in macOS system keychain: $cert_path"
+    log.info "⚠️  This requires administrator privileges (sudo)"
+  else
+    keychain_name="login keychain"
+    log.info "Trusting certificate in macOS login keychain: $cert_path"
+  fi
   
   # Get SHA-1 fingerprint to uniquely identify this certificate
   local cert_fingerprint
@@ -927,31 +999,52 @@ _ssl.trust_cert_macos() {
 
   # Try to update trust settings for existing certificate
   # The -d flag allows updating trust settings for existing certificates
-  # NOTE: We've already verified the cert is in keychain above, so this only updates trust
-  if sudo security add-trusted-cert -d -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
-    log.info "✅ Certificate trusted successfully in macOS system keychain"
-    return 0
-  fi
-  
-  # If that failed, remove and re-add with trust settings
-  # NOTE: This only happens if cert was already in keychain (verified above)
-  # We're re-adding an existing cert with trust, not adding a new one
-  log.debug "Failed to update trust settings, removing and re-adding certificate with trust..."
-  sudo security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>/dev/null || log.debug "Certificate removal skipped"
-  
-  # Re-add with trust settings (cert was already in keychain, we're just updating trust)
-  if sudo security add-trusted-cert -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
-    log.info "✅ Certificate trusted successfully in macOS system keychain"
-    return 0
+  if [[ "$keychain_type" == "system" ]]; then
+    if sudo security add-trusted-cert -d -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
+      log.info "✅ Certificate trusted successfully in $keychain_name"
+      return 0
+    fi
+    
+    # If that failed, remove and re-add with trust settings
+    log.debug "Failed to update trust settings, removing and re-adding certificate with trust..."
+    sudo security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>/dev/null || log.debug "Certificate removal skipped"
+    
+    # Re-add with trust settings
+    if sudo security add-trusted-cert -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
+      log.info "✅ Certificate trusted successfully in $keychain_name"
+      return 0
+    fi
+  else
+    if security add-trusted-cert -d -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
+      log.info "✅ Certificate trusted successfully in $keychain_name"
+      return 0
+    fi
+    
+    # If that failed, remove and re-add with trust settings
+    log.debug "Failed to update trust settings, removing and re-adding certificate with trust..."
+    security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>/dev/null || log.debug "Certificate removal skipped"
+    
+    # Re-add with trust settings
+    if security add-trusted-cert -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
+      log.info "✅ Certificate trusted successfully in $keychain_name"
+      return 0
+    fi
   fi
   
   log.warning "Failed to set trust settings automatically"
   log.info "   Certificate is in keychain but trust settings may not be configured"
   log.info "   Please manually set trust in Keychain Access:"
-  log.info "   1. Open Keychain Access"
-  log.info "   2. Select 'System' keychain"
-  log.info "   3. Find the certificate and double-click it"
-  log.info "   4. Expand 'Trust' section and set to 'Always Trust'"
+  if [[ "$keychain_type" == "system" ]]; then
+    log.info "   1. Open Keychain Access"
+    log.info "   2. Select 'System' keychain"
+    log.info "   3. Find the certificate and double-click it"
+    log.info "   4. Expand 'Trust' section and set to 'Always Trust'"
+  else
+    log.info "   1. Open Keychain Access"
+    log.info "   2. Select 'login' keychain"
+    log.info "   3. Find the certificate and double-click it"
+    log.info "   4. Expand 'Trust' section and set to 'Always Trust'"
+  fi
   error.throw "Failed to trust certificate automatically - certificate exists but trust not configured. Please manually set trust in Keychain Access." 1
 }
 
@@ -1015,39 +1108,43 @@ _ssl.trust_cert_linux() {
 }
 
 
-## @function: ssl.trust_cert(cert_path)
+## @function: ssl.trust_cert(cert_path, keychain_type?)
 ##
 ## @description: Platform-aware certificate trust function. This function ONLY trusts - it does NOT add certificates. If the certificate is not in the keychain, this function will fail with an error.
 ##
 ## @param: $1 - Path to certificate file
+## @param: $2 - Optional keychain type: "login" (default) or "system"
 ##
 ## @return: null (throws error if certificate is not in keychain)
 ##
 ## @note: Certificate must be added to keychain first using ssl.add_cert_to_keychain()
 ssl.trust_cert() {
   local cert_path="$1"
+  local keychain_type="${2:-login}"
 
   if [[ -z "$cert_path" ]]; then
     error.throw "Missing argument: cert_path='$cert_path'" 1
   fi
 
   if [[ $(isMacOS) ]]; then
-    _ssl.trust_cert_macos "$cert_path"
+    _ssl.trust_cert_macos "$cert_path" "$keychain_type"
   else
     _ssl.trust_cert_linux "$cert_path"
   fi
 }
 
 
-## @function: _ssl.untrust_cert_macos(cert_path)
+## @function: _ssl.untrust_cert_macos(cert_path, keychain_type?)
 ##
 ## @description: [PRIVATE] Untrust a certificate on macOS by removing it from the keychain
 ##
 ## @param: $1 - Path to certificate file
+## @param: $2 - Optional keychain type: "login" (default) or "system"
 ##
 ## @return: null
 _ssl.untrust_cert_macos() {
   local cert_path="$1"
+  local keychain_type="${2:-login}"
 
   if [[ -z "$cert_path" ]]; then
     error.throw "Missing argument: cert_path='$cert_path'" 1
@@ -1064,7 +1161,14 @@ _ssl.untrust_cert_macos() {
   fi
 
   local keychain
-  keychain="$(_ssl.get_keychain_path)"
+  keychain="$(_ssl.get_keychain_path "$keychain_type")"
+  
+  local keychain_name
+  if [[ "$keychain_type" == "system" ]]; then
+    keychain_name="system keychain"
+  else
+    keychain_name="login keychain"
+  fi
 
   # Get SHA-1 fingerprint to uniquely identify this certificate
   local cert_fingerprint
@@ -1076,24 +1180,44 @@ _ssl.untrust_cert_macos() {
     local cert_cn
     cert_cn="$(_ssl.get_cert_cn "$cert_path")"
     
-    log.info "Removing certificate from macOS keychain: $cert_path (CN: $cert_cn)"
-    log.info "⚠️  Please check for a confirmation dialog - you may need to approve the certificate removal in another window"
+    log.info "Removing certificate from macOS $keychain_name: $cert_path (CN: $cert_cn)"
+    if [[ "$keychain_type" == "system" ]]; then
+      log.info "⚠️  This requires administrator privileges (sudo)"
+    fi
     
     # Remove certificate from keychain by CN (ignore errors if not found)
-    if security delete-certificate -c "$cert_cn" "$keychain" >/dev/null 2>&1; then
-      log.info "✅ Certificate untrusted successfully from macOS keychain"
+    if [[ "$keychain_type" == "system" ]]; then
+      if sudo security delete-certificate -c "$cert_cn" "$keychain" >/dev/null 2>&1; then
+        log.info "✅ Certificate untrusted successfully from $keychain_name"
+      else
+        log.debug "Certificate not found in keychain or already removed: $cert_cn"
+      fi
     else
-      log.debug "Certificate not found in keychain or already removed: $cert_cn"
+      if security delete-certificate -c "$cert_cn" "$keychain" >/dev/null 2>&1; then
+        log.info "✅ Certificate untrusted successfully from $keychain_name"
+      else
+        log.debug "Certificate not found in keychain or already removed: $cert_cn"
+      fi
     fi
   else
-    log.info "Removing certificate from macOS keychain: $cert_path (fingerprint: ${cert_fingerprint:0:8}...)"
-    log.info "⚠️  Please check for a confirmation dialog - you may need to approve the certificate removal in another window"
+    log.info "Removing certificate from macOS $keychain_name: $cert_path (fingerprint: ${cert_fingerprint:0:8}...)"
+    if [[ "$keychain_type" == "system" ]]; then
+      log.info "⚠️  This requires administrator privileges (sudo)"
+    fi
     
     # Remove certificate from keychain by fingerprint (ignore errors if not found)
-    if security delete-certificate -Z "$cert_fingerprint" "$keychain" >/dev/null 2>&1; then
-      log.info "✅ Certificate untrusted successfully from macOS keychain"
+    if [[ "$keychain_type" == "system" ]]; then
+      if sudo security delete-certificate -Z "$cert_fingerprint" "$keychain" >/dev/null 2>&1; then
+        log.info "✅ Certificate untrusted successfully from $keychain_name"
+      else
+        log.debug "Certificate not found in keychain or already removed (fingerprint: ${cert_fingerprint:0:8}...)"
+      fi
     else
-      log.debug "Certificate not found in keychain or already removed (fingerprint: ${cert_fingerprint:0:8}...)"
+      if security delete-certificate -Z "$cert_fingerprint" "$keychain" >/dev/null 2>&1; then
+        log.info "✅ Certificate untrusted successfully from $keychain_name"
+      else
+        log.debug "Certificate not found in keychain or already removed (fingerprint: ${cert_fingerprint:0:8}...)"
+      fi
     fi
   fi
 }
@@ -1157,22 +1281,24 @@ _ssl.untrust_cert_linux() {
 }
 
 
-## @function: ssl.untrust_cert(cert_path)
+## @function: ssl.untrust_cert(cert_path, keychain_type?)
 ##
 ## @description: Platform-aware certificate untrust function
 ##
 ## @param: $1 - Path to certificate file
+## @param: $2 - Optional keychain type: "login" (default) or "system"
 ##
 ## @return: null
 ssl.untrust_cert() {
   local cert_path="$1"
+  local keychain_type="${2:-login}"
 
   if [[ -z "$cert_path" ]]; then
     error.throw "Missing argument: cert_path='$cert_path'" 1
   fi
 
   if [[ $(isMacOS) ]]; then
-    _ssl.untrust_cert_macos "$cert_path"
+    _ssl.untrust_cert_macos "$cert_path" "$keychain_type"
   else
     _ssl.untrust_cert_linux "$cert_path"
   fi
