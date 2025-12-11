@@ -657,28 +657,59 @@ ssl.is_cert_trusted() {
     return 1
   fi
 
-  # Check trust settings for the certificate
-  # If the certificate is trusted, the trust settings will show "trustRoot" or similar
-  local trust_output
-  trust_output="$(security trust-settings-export -d 2>/dev/null | grep -i "$cert_fingerprint" || echo "")"
-  
-  if [[ -n "$trust_output" ]]; then
-    # Certificate has trust settings configured
-    return 0
-  fi
-
-  # Alternative: Check if certificate exists and try to verify trust via find-certificate
-  # This is a fallback method
-  local cert_info
-  cert_info="$(security find-certificate -a -Z "$cert_fingerprint" "$keychain" 2>/dev/null || echo "")"
-  
-  if [[ -n "$cert_info" ]]; then
-    # Certificate is in keychain, but we can't definitively check trust via CLI
-    # For system keychain, if it's added via add-trusted-cert, it should be trusted
-    # We'll return 1 here and let the trust function handle it
+  # First, verify the certificate is in the keychain
+  if ! security find-certificate -Z "$cert_fingerprint" "$keychain" >/dev/null 2>&1; then
+    # Certificate not in keychain, so definitely not trusted
     return 1
   fi
 
+  # For system keychain, checking trust via CLI is notoriously difficult
+  # We'll try multiple methods to determine if the certificate is trusted
+
+  # Method 1: Check trust settings export (requires admin for system keychain)
+  # This exports trust settings but may not work reliably for system keychain
+  local trust_settings
+  trust_settings="$(sudo security trust-settings-export -d 2>/dev/null 2>&1)"
+  local trust_export_status=$?
+  
+  if [[ $trust_export_status -eq 0 && -n "$trust_settings" ]]; then
+    # Trust settings export succeeded - search for our certificate
+    local cert_cn
+    cert_cn="$(_ssl.get_cert_cn "$cert_path")"
+    
+    # Search for fingerprint or CN in trust settings
+    if echo "$trust_settings" | grep -qiE "($cert_fingerprint|$cert_cn)" 2>/dev/null; then
+      return 0
+    fi
+  fi
+
+  # Method 2: Try a test trust operation to see if it's already trusted
+  # Extract cert to temp file and try to verify trust
+  local temp_cert
+  temp_cert="$(mktemp)" || return 1
+  
+  if security find-certificate -a -Z "$cert_fingerprint" -p "$keychain" > "$temp_cert" 2>/dev/null; then
+    # Try verify-cert - for self-signed certs in system keychain that are trusted,
+    # this might succeed. However, verify-cert can be unreliable for self-signed.
+    # We'll use it as a hint, not definitive proof.
+    if security verify-cert -c "$temp_cert" >/dev/null 2>&1; then
+      rm -f "$temp_cert"
+      return 0
+    fi
+  fi
+  
+  rm -f "$temp_cert"
+
+  # Method 3: Heuristic for system keychain
+  # If the certificate is in the system keychain and we can't determine trust via CLI,
+  # we'll assume it might be trusted if it was added recently or if trust-settings-export
+  # is not available. However, to be safe, we'll return 1 and let the trust function
+  # handle it (it's idempotent).
+  #
+  # The issue is that macOS doesn't provide a reliable CLI way to check trust for
+  # system keychain certificates. The trust function will try to trust it, and
+  # if it's already trusted, `add-trusted-cert -d` should handle it gracefully.
+  
   return 1
 }
 
@@ -896,18 +927,9 @@ _ssl.trust_cert_macos() {
   local keychain
   keychain="$(_ssl.get_keychain_path)"
 
-  # Certificate must be in keychain before we can trust it
-  # This function ONLY trusts - it does NOT add certificates to the keychain
-  # If the certificate is not in the keychain, this function will fail
-  if ! ssl.is_cert_in_keychain "$cert_path"; then
-    error.throw "Certificate is not in keychain. Please add it first using ssl.add_cert_to_keychain: $cert_path" 1
-  fi
-
-  # Check if already trusted
-  if ssl.is_cert_trusted "$cert_path"; then
-    log.debug "Certificate is already trusted in system keychain"
-    return 0
-  fi
+  # Note: Even if is_cert_trusted returns false, the certificate might still be trusted
+  # (due to limitations in checking system keychain trust via CLI). The trust operation
+  # below should be idempotent - if already trusted, it should succeed without changes.
 
   log.info "Trusting certificate in macOS system keychain: $cert_path"
   log.info "⚠️  This requires administrator privileges (sudo)"
@@ -1172,4 +1194,3 @@ ssl.untrust_cert() {
     _ssl.untrust_cert_linux "$cert_path"
   fi
 }
-
