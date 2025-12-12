@@ -506,7 +506,7 @@ ssl.is_cert_trusted() {
   fi
 
   # Check if the cert fingerprint exists in the exported trust settings
-  if ! grep -q "key>$cert_fingerprint" "$temp_trust_file"; then
+  if ! grep -qE "<key>${cert_fingerprint}</key>" "$temp_trust_file"; then
     rm -f "$temp_trust_file"
     return 1  # Fingerprint not found; not trusted
   fi
