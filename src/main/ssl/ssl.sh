@@ -895,32 +895,6 @@ _ssl.trust_cert_macos() {
       return 0
     fi
     
-    # If that failed, remove and re-add with trust settings
-    log.debug "Failed to update trust settings, removing and re-adding certificate with trust..."
-    sudo security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>/dev/null || log.debug "Certificate removal skipped"
-    
-    # Re-add with trust settings
-    if sudo security add-trusted-cert -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
-      log.info "✅ Certificate trusted successfully in $keychain_name"
-      return 0
-    fi
-  else
-    if security add-trusted-cert -d -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
-      log.info "✅ Certificate trusted successfully in $keychain_name"
-      return 0
-    fi
-    
-    # If that failed, remove and re-add with trust settings
-    log.debug "Failed to update trust settings, removing and re-adding certificate with trust..."
-    security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>/dev/null || log.debug "Certificate removal skipped"
-    
-    # Re-add with trust settings
-    if security add-trusted-cert -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
-      log.info "✅ Certificate trusted successfully in $keychain_name"
-      return 0
-    fi
-  fi
-  
   log.warning "Failed to set trust settings automatically"
   log.info "   Certificate is in keychain but trust settings may not be configured"
   log.info "   Please manually set trust in Keychain Access:"
