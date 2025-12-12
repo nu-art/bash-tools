@@ -519,11 +519,11 @@ ssl.is_cert_trusted() {
   local trust_result
   trust_result="$(echo "$filtered" | sed -n "/key>$cert_fingerprint/,/integer>[13]/p" | grep "integer>" | head -1 | sed 's/.*integer>\([13]\)<.*/\1/')"
   
-  if [[ "$trust_result" == "1" ]]; then
-    return 0
+  if [[ "$trust_result" == "3" ]]; then
+    return 1
   fi
   
-  return 1
+  return 0
 }
 
 
