@@ -125,6 +125,43 @@ _ssl.get_linux_ca_cert_name() {
   echo "localhost-dev.crt"
 }
 
+## @function: _ssl.get_system_openssl_config()
+##
+## @description: Returns the path to the system openssl.cnf file
+##
+## @param: none
+##
+## @return: Path to system openssl.cnf (empty if not found)
+_ssl.get_system_openssl_config() {
+  if [[ "$(uname)" == "Darwin" ]]; then
+    # macOS system openssl config
+    local macos_config="/System/Library/OpenSSL/openssl.cnf"
+    if [[ -f "$macos_config" ]]; then
+      echo "$macos_config"
+      return
+    fi
+    # Fallback for Homebrew openssl
+    if command -v brew >/dev/null 2>&1; then
+      local brew_config="$(brew --prefix openssl 2>/dev/null)/etc/openssl.cnf"
+      if [[ -f "$brew_config" ]]; then
+        echo "$brew_config"
+        return
+      fi
+    fi
+  else
+    # Linux system openssl config locations
+    for config_path in "/etc/ssl/openssl.cnf" "/usr/lib/ssl/openssl.cnf" "/etc/pki/tls/openssl.cnf"; do
+      if [[ -f "$config_path" ]]; then
+        echo "$config_path"
+        return
+      fi
+    done
+  fi
+  
+  # Return empty if not found (will use default openssl behavior)
+  echo ""
+}
+
 ## @function: _ssl.find_config_file()
 ##
 ## @description: Finds the SSL certificate configuration file in the repo
@@ -371,77 +408,103 @@ ssl.generate_cert() {
     log.debug "SAN entries: ${san_entries[*]}"
   fi
   
-  # If SAN entries are provided, we need to use an openssl config file
+  # If SAN entries are provided, use system openssl.cnf as base (like the working script)
   if [[ ${#san_entries[@]} -gt 0 ]]; then
-    local temp_config
-    temp_config="$(mktemp)" || error.throw "Failed to create temporary config file" 1
+    # Get system openssl config path
+    local system_config
+    system_config="$(_ssl.get_system_openssl_config)"
     
-    # Create openssl config with SAN extension
-    cat > "$temp_config" <<EOF
+    # Build SAN configuration string
+    local san_config="[SAN]\n"
+    local dns_index=1
+    local ip_index=1
+    for san in "${san_entries[@]}"; do
+      # Check if it's an IP address (simple check: contains digits and dots)
+      if [[ "$san" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        san_config="${san_config}IP.$ip_index = $san\n"
+        ip_index=$((ip_index + 1))
+      else
+        san_config="${san_config}DNS.$dns_index = $san\n"
+        dns_index=$((dns_index + 1))
+      fi
+    done
+    
+    # Generate certificate using system openssl.cnf as base with SAN extension
+    # This matches the working script approach: -config <(cat system_config <(printf "[SAN]..."))
+    if [[ -n "$system_config" ]]; then
+      # Use system config as base
+      if ! openssl req -x509 -newkey rsa:4096 \
+        -keyout "$key_path" \
+        -out "$cert_path" \
+        -days "$days" \
+        -nodes \
+        -subj "/CN=$cn" \
+        -reqexts SAN \
+        -extensions SAN \
+        -config <(cat "$system_config" <(printf "$san_config")) \
+        -sha256 \
+        >/dev/null 2>&1; then
+        error.throw "Failed to generate SSL certificate with SAN entries using system openssl.cnf" 1
+      fi
+    else
+      # Fallback: create temp config if system config not found
+      log.warning "System openssl.cnf not found, using fallback config"
+      local temp_config
+      temp_config="$(mktemp)" || error.throw "Failed to create temporary config file" 1
+      
+      cat > "$temp_config" <<EOF
 [req]
 distinguished_name = req_distinguished_name
-req_extensions = v3_req
+req_extensions = SAN
 prompt = no
 
 [req_distinguished_name]
 CN = $cn
 
-[v3_req]
+[SAN]
 keyUsage = digitalSignature, keyEncipherment, dataEncipherment
 extendedKeyUsage = serverAuth
 subjectAltName = @alt_names
 
 [alt_names]
 EOF
-    
-    # Verify config file was created
-    if [[ ! -f "$temp_config" ]]; then
-      error.throw "Failed to create temporary config file: $temp_config" 1
-    fi
-    
-    # Add SAN entries (support both DNS and IP addresses)
-    local dns_index=1
-    local ip_index=1
-    for san in "${san_entries[@]}"; do
-      # Check if it's an IP address (simple check: contains digits and dots)
-      if [[ "$san" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        if ! echo "IP.$ip_index = $san" >> "$temp_config"; then
-          rm -f "$temp_config"
-          error.throw "Failed to write SAN IP entry to temporary config file: $temp_config" 1
+      
+      # Add SAN entries
+      for san in "${san_entries[@]}"; do
+        if [[ "$san" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "IP.$ip_index = $san" >> "$temp_config"
+          ip_index=$((ip_index + 1))
+        else
+          echo "DNS.$dns_index = $san" >> "$temp_config"
+          dns_index=$((dns_index + 1))
         fi
-        ip_index=$((ip_index + 1))
-      else
-        if ! echo "DNS.$dns_index = $san" >> "$temp_config"; then
-          rm -f "$temp_config"
-          error.throw "Failed to write SAN DNS entry to temporary config file: $temp_config" 1
-        fi
-        dns_index=$((dns_index + 1))
+      done
+      
+      if ! openssl req -x509 -newkey rsa:4096 \
+        -keyout "$key_path" \
+        -out "$cert_path" \
+        -days "$days" \
+        -nodes \
+        -config "$temp_config" \
+        -reqexts SAN \
+        -extensions SAN \
+        -sha256 \
+        >/dev/null 2>&1; then
+        rm -f "$temp_config"
+        error.throw "Failed to generate SSL certificate with SAN entries" 1
       fi
-    done
-    
-    # Generate certificate with config
-    if ! openssl req -x509 -newkey rsa:4096 \
-      -keyout "$key_path" \
-      -out "$cert_path" \
-      -days "$days" \
-      -nodes \
-      -config "$temp_config" \
-      -extensions v3_req \
-      >/dev/null 2>&1; then
+      
       rm -f "$temp_config"
-      error.throw "Failed to generate SSL certificate with SAN entries" 1
     fi
-    
-    # Clean up temp config
-    rm -f "$temp_config"
   else
-    # Simple certificate without SAN
+    # Simple certificate without SAN (add -sha256 for consistency)
     if ! openssl req -x509 -newkey rsa:4096 \
       -keyout "$key_path" \
       -out "$cert_path" \
       -days "$days" \
       -nodes \
       -subj "/CN=$cn" \
+      -sha256 \
       >/dev/null 2>&1; then
       error.throw "Failed to generate SSL certificate" 1
     fi
