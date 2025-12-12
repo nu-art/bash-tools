@@ -352,6 +352,22 @@ ssl.generate_cert() {
   folder.create "$(dirname "$key_path")"
   folder.create "$(dirname "$cert_path")"
   log.info "Generating SSL certificate: $cert_path (valid for $days days)"
+  
+  # Build SAN string with all domains
+  local san_string="DNS:$cn"
+  if [[ ${#domains[@]} -gt 0 ]]; then
+    for domain in "${domains[@]}"; do
+      if [[ -n "$domain" ]]; then
+        # Detect if it's an IP address or DNS name
+        if [[ "$domain" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          san_string="${san_string},IP:${domain}"
+        else
+          san_string="${san_string},DNS:${domain}"
+        fi
+      fi
+    done
+  fi
+  
   openssl req -x509 \
           -newkey rsa:4096 \
           -keyout "$key_path" \
@@ -362,7 +378,7 @@ ssl.generate_cert() {
           -reqexts SAN \
           -extensions SAN \
           -config <(cat /System/Library/OpenSSL/openssl.cnf \
-            <(printf "[SAN]\nsubjectAltName=DNS:$cn")) \
+            <(printf "[SAN]\nsubjectAltName=%s\nbasicConstraints=CA:TRUE\nkeyUsage=keyCertSign,cRLSign\n" "$san_string")) \
           -sha256 \
           >/dev/null 2>&1
 
