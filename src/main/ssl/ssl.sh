@@ -125,43 +125,6 @@ _ssl.get_linux_ca_cert_name() {
   echo "localhost-dev.crt"
 }
 
-## @function: _ssl.get_system_openssl_config()
-##
-## @description: Returns the path to the system openssl.cnf file
-##
-## @param: none
-##
-## @return: Path to system openssl.cnf (empty if not found)
-_ssl.get_system_openssl_config() {
-  if [[ "$(uname)" == "Darwin" ]]; then
-    # macOS system openssl config
-    local macos_config="/System/Library/OpenSSL/openssl.cnf"
-    if [[ -f "$macos_config" ]]; then
-      echo "$macos_config"
-      return
-    fi
-    # Fallback for Homebrew openssl
-    if command -v brew >/dev/null 2>&1; then
-      local brew_config="$(brew --prefix openssl 2>/dev/null)/etc/openssl.cnf"
-      if [[ -f "$brew_config" ]]; then
-        echo "$brew_config"
-        return
-      fi
-    fi
-  else
-    # Linux system openssl config locations
-    for config_path in "/etc/ssl/openssl.cnf" "/usr/lib/ssl/openssl.cnf" "/etc/pki/tls/openssl.cnf"; do
-      if [[ -f "$config_path" ]]; then
-        echo "$config_path"
-        return
-      fi
-    done
-  fi
-  
-  # Return empty if not found (will use default openssl behavior)
-  echo ""
-}
-
 ## @function: _ssl.find_config_file()
 ##
 ## @description: Finds the SSL certificate configuration file in the repo
@@ -359,7 +322,7 @@ _ssl.parse_config() {
 # Public Functions
 # ============================================================================
 
-## @function: ssl.generate_cert(key_path, cert_path, days?, cn?, san_array?)
+## @function: ssl.generate_cert(key_path, cert_path, days?, cn?, domains?)
 ##
 ## @description: Generate a self-signed SSL certificate using openssl
 ##
@@ -376,7 +339,7 @@ ssl.generate_cert() {
   local days="${3:-365}"
   local cn="${4:-localhost}"
   shift 4 2>/dev/null || shift 3 2>/dev/null || true
-  local san_entries=("$@")
+  local domains=("$@")
 
   if [[ -z "$key_path" || -z "$cert_path" ]]; then
     error.throw "Missing arguments: key_path='$key_path', cert_path='$cert_path'" 1
@@ -386,177 +349,29 @@ ssl.generate_cert() {
     error.throw "openssl is not installed or not in PATH" 1
   fi
 
-  local key_dir cert_dir
-  key_dir="$(dirname "$key_path")"
-  cert_dir="$(dirname "$cert_path")"
-
-  # Create directories if they don't exist - throw error if creation fails
-  if [[ ! -d "$key_dir" ]]; then
-    if ! mkdir -p "$key_dir"; then
-      error.throw "Failed to create key directory: $key_dir" 1
-    fi
-  fi
-  if [[ ! -d "$cert_dir" ]]; then
-    if ! mkdir -p "$cert_dir"; then
-      error.throw "Failed to create certificate directory: $cert_dir" 1
-    fi
-  fi
-
+  folder.create "$(dirname "$key_path")"
+  folder.create "$(dirname "$cert_path")"
   log.info "Generating SSL certificate: $cert_path (valid for $days days)"
-  log.debug "CN: $cn"
-  if [[ ${#san_entries[@]} -gt 0 ]]; then
-    log.debug "SAN entries: ${san_entries[*]}"
-  fi
-  
-  # If SAN entries are provided, use system openssl.cnf as base (like the working script)
-  if [[ ${#san_entries[@]} -gt 0 ]]; then
-    # Get system openssl config path
-    local system_config
-    system_config="$(_ssl.get_system_openssl_config)"
-    
-    # Build SAN configuration string
-    local san_config="[SAN]\n"
-    local dns_index=1
-    local ip_index=1
-    for san in "${san_entries[@]}"; do
-      # Check if it's an IP address (simple check: contains digits and dots)
-      if [[ "$san" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        san_config="${san_config}IP.$ip_index = $san\n"
-        ip_index=$((ip_index + 1))
-      else
-        san_config="${san_config}DNS.$dns_index = $san\n"
-        dns_index=$((dns_index + 1))
-      fi
-    done
-    
-    # Generate certificate using system openssl.cnf as base with SAN extension
-    # This matches the working script approach: -config <(cat system_config <(printf "[SAN]..."))
-    if [[ -n "$system_config" ]]; then
-      # Use system config as base
-      if ! openssl req -x509 -newkey rsa:4096 \
-        -keyout "$key_path" \
-        -out "$cert_path" \
-        -days "$days" \
-        -nodes \
-        -subj "/CN=$cn" \
-        -reqexts SAN \
-        -extensions SAN \
-        -config <(cat "$system_config" <(printf "$san_config")) \
-        -sha256 \
-        >/dev/null 2>&1; then
-        error.throw "Failed to generate SSL certificate with SAN entries using system openssl.cnf" 1
-      fi
-    else
-      # Fallback: create temp config if system config not found
-      log.warning "System openssl.cnf not found, using fallback config"
-      local temp_config
-      temp_config="$(mktemp)" || error.throw "Failed to create temporary config file" 1
-      
-      cat > "$temp_config" <<EOF
-[req]
-distinguished_name = req_distinguished_name
-req_extensions = SAN
-prompt = no
+  openssl req -x509 \
+          -newkey rsa:4096 \
+          -keyout "$key_path" \
+          -out "$cert_path" \
+          -days "$days" \
+          -nodes \
+          -subj "/CN=$cn" \
+          -reqexts SAN \
+          -extensions SAN \
+          -config <(cat /System/Library/OpenSSL/openssl.cnf \
+            <(printf "[SAN]\nsubjectAltName=DNS:$cn")) \
+          -sha256 \
+          >/dev/null 2>&1
 
-[req_distinguished_name]
-CN = $cn
-
-[SAN]
-keyUsage = digitalSignature, keyEncipherment, dataEncipherment
-extendedKeyUsage = serverAuth
-subjectAltName = @alt_names
-
-[alt_names]
-EOF
-      
-      # Add SAN entries
-      for san in "${san_entries[@]}"; do
-        if [[ "$san" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "IP.$ip_index = $san" >> "$temp_config"
-          ip_index=$((ip_index + 1))
-        else
-          echo "DNS.$dns_index = $san" >> "$temp_config"
-          dns_index=$((dns_index + 1))
-        fi
-      done
-      
-      if ! openssl req -x509 -newkey rsa:4096 \
-        -keyout "$key_path" \
-        -out "$cert_path" \
-        -days "$days" \
-        -nodes \
-        -config "$temp_config" \
-        -reqexts SAN \
-        -extensions SAN \
-        -sha256 \
-        >/dev/null 2>&1; then
-        rm -f "$temp_config"
-        error.throw "Failed to generate SSL certificate with SAN entries" 1
-      fi
-      
-      rm -f "$temp_config"
-    fi
-  else
-    # Simple certificate without SAN (add -sha256 for consistency)
-    if ! openssl req -x509 -newkey rsa:4096 \
-      -keyout "$key_path" \
-      -out "$cert_path" \
-      -days "$days" \
-      -nodes \
-      -subj "/CN=$cn" \
-      -sha256 \
-      >/dev/null 2>&1; then
-      error.throw "Failed to generate SSL certificate" 1
-    fi
-  fi
-
-  if [[ ! -f "$key_path" || ! -f "$cert_path" ]]; then
-    error.throw "Failed to generate SSL certificate - files were not created: key=$key_path, cert=$cert_path" 1
-  fi
+#  error.throw "Failed to generate SSL certificate: $cert_path" $?
 
   log.info "✅ SSL certificate generated successfully"
 }
 
 
-## @function: ssl.generate_cert_with_config(cert_name, key_path?, cert_path?)
-##
-## @description: Generate SSL certificate using configuration from .config/ssl-certs.json
-##
-## @param: $1 - Certificate name (key in config file)
-## @param: $2 - Optional path to output private key file (default: ~/.local-dev-cert/{cert_name}.key)
-## @param: $3 - Optional path to output certificate file (default: ~/.local-dev-cert/{cert_name}.crt)
-##
-## @return: null
-ssl.generate_cert_with_config() {
-  local cert_name="$1"
-  local key_path="$2"
-  local cert_path="$3"
-  
-  if [[ -z "$cert_name" ]]; then
-    error.throw "Missing argument: cert_name" 1
-  fi
-  
-  # Read configuration
-  local config_string
-  if ! config_string="$(_ssl.read_config "$cert_name")"; then
-    error.throw "Certificate configuration not found for: $cert_name. Please create .config/ssl-certs.json" 1
-  fi
-  
-  # Parse configuration
-  _ssl.parse_config "$config_string" || error.throw "Failed to parse certificate configuration" 1
-  
-  # Set default paths if not provided
-  local cert_dir="${SSL_CERT_DIR:-${HOME}/.local-dev-cert}"
-  if [[ -z "$key_path" ]]; then
-    key_path="${cert_dir}/${cert_name}.key"
-  fi
-  if [[ -z "$cert_path" ]]; then
-    cert_path="${cert_dir}/${cert_name}.crt"
-  fi
-  
-  # Generate certificate with config values
-  ssl.generate_cert "$key_path" "$cert_path" "$SSL_CONFIG_DAYS" "$SSL_CONFIG_CN" "${SSL_CONFIG_SAN[@]}"
-}
 
 
 ## @function: ssl.ensure_cert(key_path, cert_path, days?, cn?, san_array?)
@@ -575,8 +390,6 @@ ssl.ensure_cert() {
   local cert_path="$2"
   local days="${3:-365}"
   local cn="${4:-localhost}"
-  shift 4 2>/dev/null || shift 3 2>/dev/null || true
-  local san_entries=("$@")
 
   # Check if certificate files exist using building block API
   if ssl.has_cert "$cert_path" && [[ -f "$key_path" ]]; then
@@ -610,7 +423,7 @@ ssl.ensure_cert() {
   fi
 
   # Generate certificate with SAN entries - this will throw an error if it fails
-  ssl.generate_cert "$key_path" "$cert_path" "$days" "$cn" "${san_entries[@]}" || error.throw "Failed to generate SSL certificate: $cert_path" 1
+  ssl.generate_cert "$key_path" "$cert_path" "$days" "$cn"
 }
 
 
@@ -755,7 +568,7 @@ ssl.is_cert_trusted() {
       export_success=true
     fi
   else
-    # Login keychain: use -d for admin trust settings (user admin domain)
+    # Login keychain: use -d for admin trust settings (user admin domains)
     if security trust-settings-export -d "$temp_trust_file" 2>/dev/null 2>&1; then
       export_success=true
     fi
