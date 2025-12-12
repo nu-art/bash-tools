@@ -498,17 +498,13 @@ ssl.is_cert_trusted() {
   log.debug "Using temporary file for trust settings export: $temp_trust_file"
   log.debug "Checking certificate signature: $cert_fingerprint"
   
-  # -d flag exports admin trust settings, -s flag exports system trust settings
+  # -d flag exports trust settings also for system certificates
   local export_flag="-d"
-  if [[ "$keychain_type" == "system" ]]; then
-    export_flag="-s"
-  fi
-
   if ! security trust-settings-export "$export_flag" "$temp_trust_file" 2>&1; then
     rm -f "$temp_trust_file"
     error.throw "Failed to export trust settings - cannot determine trust status" 1
   fi
-  
+
   # Check if the cert fingerprint exists in the exported trust settings
   if ! grep -q "key>$cert_fingerprint" "$temp_trust_file"; then
     rm -f "$temp_trust_file"
