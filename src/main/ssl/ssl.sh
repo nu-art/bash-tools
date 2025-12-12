@@ -497,20 +497,15 @@ ssl.is_cert_trusted() {
   temp_trust_file="$(mktemp)" || error.throw "Failed to create temporary file for trust settings export" 1
   log.debug "Using temporary file for trust settings export: $temp_trust_file"
   
-  # Export trust settings (with sudo if system keychain, without if login keychain)
   # -d flag exports admin trust settings, -s flag exports system trust settings
+  local export_flag="-d"
   if [[ "$keychain_type" == "system" ]]; then
-    # System keychain: use -s for system trust settings, requires sudo
-    if ! sudo security trust-settings-export -s "$temp_trust_file" 2>&1; then
-      rm -f "$temp_trust_file"
-      error.throw "Failed to export trust settings - cannot determine trust status" 1
-    fi
-  else
-    # Login keychain: use -d for admin trust settings (user admin domains)
-    if ! security trust-settings-export -d "$temp_trust_file" 2>&1; then
-      rm -f "$temp_trust_file"
-      error.throw "Failed to export trust settings - cannot determine trust status" 1
-    fi
+    export_flag="-s"
+  fi
+
+  if ! security trust-settings-export "$export_flag" "$temp_trust_file" 2>&1; then
+    rm -f "$temp_trust_file"
+    error.throw "Failed to export trust settings - cannot determine trust status" 1
   fi
 
   # Filter trust settings for fingerprint key or integer 1/3
@@ -523,11 +518,8 @@ ssl.is_cert_trusted() {
   local trust_result
   trust_result="$(echo "$filtered" | sed -n "/key>$cert_fingerprint/,/integer>[13]/p" | grep "integer>" | head -1 | sed 's/.*integer>\([13]\)<.*/\1/')"
   
-  # Check the trust result: 1 = trusted, 3 = not trusted
   if [[ "$trust_result" == "1" ]]; then
     return 0
-  elif [[ "$trust_result" == "3" ]]; then
-    return 1
   fi
   
   return 1
