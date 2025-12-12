@@ -496,6 +496,7 @@ ssl.is_cert_trusted() {
   local temp_trust_file
   temp_trust_file="$(mktemp)" || error.throw "Failed to create temporary file for trust settings export" 1
   log.debug "Using temporary file for trust settings export: $temp_trust_file"
+  log.debug "Checking certificate signature: $cert_fingerprint"
   
   # -d flag exports admin trust settings, -s flag exports system trust settings
   local export_flag="-d"
