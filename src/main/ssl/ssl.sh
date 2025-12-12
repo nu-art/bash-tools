@@ -27,7 +27,7 @@ _ssl.get_keychain_path() {
     # Default to login keychain (user keychain)
     local login_keychain="${HOME}/Library/Keychains/login.keychain-db"
     if [[ ! -f "$login_keychain" ]]; then
-      login_keychain="${HOME}/Library/Keychains/login.keychain"
+      error.throw "Login keychain not found: $login_keychain" 1
     fi
     echo "$login_keychain"
   fi
@@ -42,7 +42,12 @@ _ssl.get_keychain_path() {
 ## @return: Certificate fingerprint (empty string if extraction fails)
 _ssl.get_cert_fingerprint() {
   local cert_path="$1"
-  openssl x509 -in "$cert_path" -noout -fingerprint -sha1 2>/dev/null | sed 's/.*=//' | tr -d ':'
+  local fingerprint
+  fingerprint="$(openssl x509 -in "$cert_path" -noout -fingerprint -sha1 2>&1 | sed 's/.*=//' | tr -d ':')"
+  if [[ -z "$fingerprint" ]]; then
+    error.throw "Failed to extract certificate fingerprint from: $cert_path" 1
+  fi
+  echo "$fingerprint"
 }
 
 ## @function: _ssl.get_cert_cn(cert_path)
@@ -55,9 +60,9 @@ _ssl.get_cert_fingerprint() {
 _ssl.get_cert_cn() {
   local cert_path="$1"
   local cert_cn
-  cert_cn="$(openssl x509 -in "$cert_path" -noout -subject 2>/dev/null | sed -n 's/.*CN=\([^,]*\).*/\1/p')"
+  cert_cn="$(openssl x509 -in "$cert_path" -noout -subject 2>&1 | sed -n 's/.*CN=\([^,]*\).*/\1/p')"
   if [[ -z "$cert_cn" ]]; then
-    cert_cn="localhost"
+    error.throw "Failed to extract certificate CN from: $cert_path" 1
   fi
   echo "$cert_cn"
 }
@@ -80,7 +85,7 @@ _ssl.is_cert_expired_or_expiring() {
   
   # Get certificate expiration date
   local not_after
-  not_after="$(openssl x509 -in "$cert_path" -noout -enddate 2>/dev/null | cut -d= -f2)"
+  not_after="$(openssl x509 -in "$cert_path" -noout -enddate 2>&1 | cut -d= -f2)"
   
   if [[ -z "$not_after" ]]; then
     error.throw "Failed to read certificate expiration date from: $cert_path. Certificate file may be corrupted or invalid." 1
@@ -90,10 +95,14 @@ _ssl.is_cert_expired_or_expiring() {
   local expire_timestamp
   if [[ "$(uname)" == "Darwin" ]]; then
     # macOS date format
-    expire_timestamp="$(date -j -f "%b %d %H:%M:%S %Y %Z" "$not_after" +%s 2>/dev/null || date -j -f "%b %d %H:%M:%S %Y" "$not_after" +%s 2>/dev/null)"
+    if ! expire_timestamp="$(date -j -f "%b %d %H:%M:%S %Y %Z" "$not_after" +%s 2>&1)"; then
+      error.throw "Failed to parse certificate expiration date: $not_after (from $cert_path). Certificate file may be corrupted or invalid." 1
+    fi
   else
     # Linux date format
-    expire_timestamp="$(date -d "$not_after" +%s 2>/dev/null)"
+    if ! expire_timestamp="$(date -d "$not_after" +%s 2>&1)"; then
+      error.throw "Failed to parse certificate expiration date: $not_after (from $cert_path). Certificate file may be corrupted or invalid." 1
+    fi
   fi
   
   if [[ -z "$expire_timestamp" ]]; then
@@ -133,124 +142,74 @@ _ssl.get_linux_ca_cert_name() {
 _ssl.find_config_file() {
   local REPO_ROOT
   REPO_ROOT="$(folder.repo_root)"
-  # Try .conf first (bash-native), then .json for backward compatibility
   local config_file="${REPO_ROOT}/.config/ssl-certs.conf"
   
-  if [[ -f "$config_file" ]]; then
-    echo "$config_file"
-    return 0
+  if [[ ! -f "$config_file" ]]; then
+    error.throw "SSL certificate config file not found: $config_file" 1
   fi
   
-  # Fallback to JSON for backward compatibility
-  config_file="${REPO_ROOT}/.config/ssl-certs.json"
-  if [[ -f "$config_file" ]]; then
-    echo "$config_file"
-    return 0
-  fi
-  
-  return 1
+  echo "$config_file"
 }
 
 ## @function: _ssl.read_config(cert_name)
 ##
-## @description: Reads certificate configuration from .config/ssl-certs.conf (INI-style) or .json
+## @description: Reads certificate configuration from .config/ssl-certs.conf (INI-style)
 ##
 ## @param: $1 - Certificate name/key to look up in config
 ##
-## @return: Key-value format string: "cn=...|san=...|days=..." or JSON if from .json file
+## @return: Key-value format string: "cn=...|san=...|days=..."
 _ssl.read_config() {
   local cert_name="$1"
   local config_file
-  config_file="$(_ssl.find_config_file)" || return 1
+  config_file="$(_ssl.find_config_file)"
   
-  # Check file extension to determine format
-  if [[ "$config_file" == *.conf ]]; then
-    # INI-style format - parse with pure bash
-    local in_section=false
-    local cn="" san_list=() days="365"
+  # INI-style format - parse with pure bash
+  local in_section=false
+  local cn="" san_list=() days="365"
+  
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Remove comments and trim whitespace
+    line="$(echo "$line" | sed 's/#.*$//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [[ -z "$line" ]] && continue
     
-    while IFS= read -r line || [[ -n "$line" ]]; do
-      # Remove comments and trim whitespace
-      line="$(echo "$line" | sed 's/#.*$//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-      [[ -z "$line" ]] && continue
-      
-      # Check for section header [cert_name]
-      if [[ "$line" =~ ^\[(.+)\]$ ]]; then
-        in_section=false
-        if [[ "${BASH_REMATCH[1]}" == "$cert_name" ]]; then
-          in_section=true
-          cn=""
-          san_list=()
-          days="365"
-        fi
-      elif [[ "$in_section" == true ]]; then
-        # Parse key=value pairs
-        if [[ "$line" =~ ^cn[[:space:]]*=[[:space:]]*(.+)$ ]]; then
-          cn="${BASH_REMATCH[1]}"
-        elif [[ "$line" =~ ^san[[:space:]]*=[[:space:]]*(.+)$ ]]; then
-          # Split SAN entries by space or comma
-          local san_value="${BASH_REMATCH[1]}"
-          read -ra SAN_ARRAY <<< "$san_value"
-          san_list=("${SAN_ARRAY[@]}")
-        elif [[ "$line" =~ ^days[[:space:]]*=[[:space:]]*([0-9]+)$ ]]; then
-          days="${BASH_REMATCH[1]}"
-        fi
+    # Check for section header [cert_name]
+    if [[ "$line" =~ ^\[(.+)\]$ ]]; then
+      in_section=false
+      if [[ "${BASH_REMATCH[1]}" == "$cert_name" ]]; then
+        in_section=true
+        cn=""
+        san_list=()
+        days="365"
       fi
-    done < "$config_file"
-    
-    # Return config if we found the section and CN
-    if [[ "$in_section" == true && -n "$cn" ]]; then
-      echo "cn=$cn|san=${san_list[*]}|days=${days}"
-      return 0
-    fi
-    
-    return 1
-  else
-    # JSON format - try using jq if available
-    if command -v jq >/dev/null 2>&1; then
-      local result
-      result="$(jq -c ".[\"$cert_name\"]" "$config_file" 2>/dev/null)"
-      # jq returns "null" (as a string) if the key doesn't exist
-      if [[ "$result" == "null" || -z "$result" ]]; then
-        return 1
-      fi
-      echo "$result"
-      return 0
-    fi
-    
-    # Fallback: simple grep/sed parsing for basic JSON structure
-    if [[ -f "$config_file" ]]; then
-      local config_block
-      config_block="$(sed -n "/\"$cert_name\"[[:space:]]*:[[:space:]]*{/,/^[[:space:]]*}/p" "$config_file" 2>/dev/null)"
-      
-      if [[ -n "$config_block" ]]; then
-        local cn
-        cn="$(echo "$config_block" | sed -n 's/.*"cn"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
-        
-        local san_list=()
-        while IFS= read -r san_item; do
-          [[ -n "$san_item" ]] && san_list+=("$san_item")
-        done < <(echo "$config_block" | sed -n 's/.*"san"[[:space:]]*:[[:space:]]*\[\(.*\)\].*/\1/p' | sed 's/"//g' | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        
-        local days
-        days="$(echo "$config_block" | sed -n 's/.*"days"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)"
-        
-        if [[ -n "$cn" ]]; then
-          echo "cn=$cn|san=${san_list[*]}|days=${days:-365}"
-          return 0
-        fi
+    elif [[ "$in_section" == true ]]; then
+      # Parse key=value pairs
+      if [[ "$line" =~ ^cn[[:space:]]*=[[:space:]]*(.+)$ ]]; then
+        cn="${BASH_REMATCH[1]}"
+      elif [[ "$line" =~ ^san[[:space:]]*=[[:space:]]*(.+)$ ]]; then
+        # Split SAN entries by space or comma
+        local san_value="${BASH_REMATCH[1]}"
+        read -ra SAN_ARRAY <<< "$san_value"
+        san_list=("${SAN_ARRAY[@]}")
+      elif [[ "$line" =~ ^days[[:space:]]*=[[:space:]]*([0-9]+)$ ]]; then
+        days="${BASH_REMATCH[1]}"
       fi
     fi
+  done < "$config_file"
+  
+  # Return config if we found the section and CN
+  if [[ "$in_section" == true && -n "$cn" ]]; then
+    echo "cn=$cn|san=${san_list[*]}|days=${days}"
+    return 0
   fi
   
-  return 1
+  error.throw "Certificate configuration not found for: $cert_name in $config_file" 1
 }
 
 ## @function: _ssl.parse_config(config_string)
 ##
-## @description: Parses a configuration string into variables (supports key-value format and JSON)
+## @description: Parses a configuration string into variables (key-value format)
 ##
-## @param: $1 - Configuration string (key-value: "cn=...|san=...|days=..." or JSON from jq)
+## @param: $1 - Configuration string (key-value: "cn=...|san=...|days=...")
 ##
 ## @return: Sets global variables: SSL_CONFIG_CN, SSL_CONFIG_SAN (array), SSL_CONFIG_DAYS
 _ssl.parse_config() {
@@ -260,56 +219,25 @@ _ssl.parse_config() {
   SSL_CONFIG_DAYS="365"
   
   if [[ -z "$config_string" ]]; then
-    return 1
+    error.throw "Configuration string is empty" 1
   fi
   
-  # Check if it's JSON format (starts with {) - from .json file with jq
-  if [[ "$config_string" =~ ^\{ ]]; then
-    # JSON format - try using jq if available
-    if command -v jq >/dev/null 2>&1; then
-      SSL_CONFIG_CN="$(echo "$config_string" | jq -r '.cn // "localhost"')"
-      SSL_CONFIG_DAYS="$(echo "$config_string" | jq -r '.days // 365')"
-      
-      # Extract SAN array
-      local san_json
-      san_json="$(echo "$config_string" | jq -c '.san // []' 2>/dev/null)"
-      if [[ "$san_json" != "[]" && "$san_json" != "null" ]]; then
-        while IFS= read -r san_item; do
-          [[ -n "$san_item" && "$san_item" != "null" ]] && SSL_CONFIG_SAN+=("$san_item")
-        done < <(echo "$san_json" | jq -r '.[]' 2>/dev/null)
+  # Key-value format (cn=...|san=...|days=...) - from .conf file
+  IFS='|' read -ra PARTS <<< "$config_string"
+  for part in "${PARTS[@]}"; do
+    if [[ "$part" =~ ^cn=(.+)$ ]]; then
+      SSL_CONFIG_CN="${BASH_REMATCH[1]}"
+    elif [[ "$part" =~ ^san=(.+)$ ]]; then
+      local san_value="${BASH_REMATCH[1]}"
+      if [[ -n "$san_value" ]]; then
+        # Split SAN entries by space
+        read -ra SAN_ARRAY <<< "$san_value"
+        SSL_CONFIG_SAN=("${SAN_ARRAY[@]}")
       fi
-    else
-      # JSON format but no jq - use simple regex parsing
-      SSL_CONFIG_CN="$(echo "$config_string" | sed -n 's/.*"cn"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
-      SSL_CONFIG_DAYS="$(echo "$config_string" | sed -n 's/.*"days"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p')"
-      
-      local san_array_content
-      san_array_content="$(echo "$config_string" | sed -n 's/.*"san"[[:space:]]*:[[:space:]]*\[\([^]]*\)\].*/\1/p')"
-      if [[ -n "$san_array_content" ]]; then
-        while IFS= read -r san_item; do
-          san_item="$(echo "$san_item" | sed 's/^[[:space:]]*"//;s/"[[:space:]]*$//')"
-          [[ -n "$san_item" ]] && SSL_CONFIG_SAN+=("$san_item")
-        done < <(echo "$san_array_content" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-      fi
+    elif [[ "$part" =~ ^days=([0-9]+)$ ]]; then
+      SSL_CONFIG_DAYS="${BASH_REMATCH[1]}"
     fi
-  else
-    # Key-value format (cn=...|san=...|days=...) - from .conf file
-    IFS='|' read -ra PARTS <<< "$config_string"
-    for part in "${PARTS[@]}"; do
-      if [[ "$part" =~ ^cn=(.+)$ ]]; then
-        SSL_CONFIG_CN="${BASH_REMATCH[1]}"
-      elif [[ "$part" =~ ^san=(.+)$ ]]; then
-        local san_value="${BASH_REMATCH[1]}"
-        if [[ -n "$san_value" ]]; then
-          # Split SAN entries by space
-          read -ra SAN_ARRAY <<< "$san_value"
-          SSL_CONFIG_SAN=("${SAN_ARRAY[@]}")
-        fi
-      elif [[ "$part" =~ ^days=([0-9]+)$ ]]; then
-        SSL_CONFIG_DAYS="${BASH_REMATCH[1]}"
-      fi
-    done
-  fi
+  done
   
   # Set defaults if not found
   [[ -z "$SSL_CONFIG_CN" ]] && SSL_CONFIG_CN="localhost"
@@ -338,7 +266,7 @@ ssl.generate_cert() {
   local cert_path="$2"
   local days="${3:-365}"
   local cn="${4:-localhost}"
-  shift 4 2>/dev/null || shift 3 2>/dev/null || true
+  shift 4
   local domains=("$@")
 
   if [[ -z "$key_path" || -z "$cert_path" ]]; then
@@ -368,7 +296,8 @@ ssl.generate_cert() {
     done
   fi
   
-  openssl req -x509 \
+  local openssl_output
+  openssl_output="$(openssl req -x509 \
           -newkey rsa:4096 \
           -keyout "$key_path" \
           -out "$cert_path" \
@@ -380,9 +309,12 @@ ssl.generate_cert() {
           -config <(cat /System/Library/OpenSSL/openssl.cnf \
             <(printf "[SAN]\nsubjectAltName=%s\nbasicConstraints=CA:TRUE\nkeyUsage=keyCertSign,cRLSign\n" "$san_string")) \
           -sha256 \
-          >/dev/null 2>&1
+          2>&1)"
+  local openssl_exit_code=$?
 
-#  error.throw "Failed to generate SSL certificate: $cert_path" $?
+  if [[ $openssl_exit_code -ne 0 ]]; then
+    error.throw "Failed to generate SSL certificate: $cert_path. Error: $openssl_output" 1
+  fi
 
   log.info "✅ SSL certificate generated successfully"
 }
@@ -406,6 +338,8 @@ ssl.ensure_cert() {
   local cert_path="$2"
   local days="${3:-365}"
   local cn="${4:-localhost}"
+  shift 4
+  local san_entries=("$@")
 
   # Check if certificate files exist using building block API
   if ssl.has_cert "$cert_path" && [[ -f "$key_path" ]]; then
@@ -420,9 +354,7 @@ ssl.ensure_cert() {
     log.info "Removing old certificate and key files..."
     
     # Untrust the old certificate before deleting (using building block API)
-    if ssl.has_cert "$cert_path"; then
-      ssl.untrust_cert "$cert_path" || log.warning "Failed to untrust old certificate (continuing with removal)"
-    fi
+    ssl.untrust_cert "$cert_path"
     
     # Remove old files - throw error if removal fails
     if ! rm -f "$key_path"; then
@@ -439,7 +371,7 @@ ssl.ensure_cert() {
   fi
 
   # Generate certificate with SAN entries - this will throw an error if it fails
-  ssl.generate_cert "$key_path" "$cert_path" "$days" "$cn"
+  ssl.generate_cert "$key_path" "$cert_path" "$days" "$cn" "${san_entries[@]}"
 }
 
 
@@ -503,16 +435,6 @@ ssl.is_cert_in_keychain() {
   # Get SHA-1 fingerprint to uniquely identify this certificate
   local cert_fingerprint
   cert_fingerprint="$(_ssl.get_cert_fingerprint "$cert_path")"
-  
-  if [[ -z "$cert_fingerprint" ]]; then
-    # Fallback: check by CN if fingerprint extraction fails
-    local cert_cn
-    cert_cn="$(_ssl.get_cert_cn "$cert_path")"
-    if security find-certificate -a -c "$cert_cn" "$keychain" >/dev/null 2>&1; then
-      return 0
-    fi
-    return 1
-  fi
 
   # Check if this specific certificate (by fingerprint) is in keychain
   if security find-certificate -Z "$cert_fingerprint" "$keychain" >/dev/null 2>&1; then
@@ -541,7 +463,6 @@ ssl.is_cert_trusted() {
 
   if [[ ! -f "$cert_path" ]]; then
     error.throw "Certificate file doesn't exist" 1
-    return 1  # Certificate file doesn't exist - not trusted
   fi
 
   if [[ "$(uname)" != "Darwin" ]]; then
@@ -577,23 +498,18 @@ ssl.is_cert_trusted() {
   
   # Export trust settings (with sudo if system keychain, without if login keychain)
   # -d flag exports admin trust settings, -s flag exports system trust settings
-  local export_success=false
   if [[ "$keychain_type" == "system" ]]; then
     # System keychain: use -s for system trust settings, requires sudo
-    if sudo security trust-settings-export -s "$temp_trust_file" 2>/dev/null 2>&1; then
-      export_success=true
+    if ! sudo security trust-settings-export -s "$temp_trust_file" 2>&1; then
+      rm -f "$temp_trust_file"
+      error.throw "Failed to export trust settings - cannot determine trust status" 1
     fi
   else
     # Login keychain: use -d for admin trust settings (user admin domains)
-    if security trust-settings-export -d "$temp_trust_file" 2>/dev/null 2>&1; then
-      export_success=true
+    if ! security trust-settings-export -d "$temp_trust_file" 2>&1; then
+      rm -f "$temp_trust_file"
+      error.throw "Failed to export trust settings - cannot determine trust status" 1
     fi
-  fi
-  
-  if [[ "$export_success" == false ]]; then
-    rm -f "$temp_trust_file"
-    # Failed to export trust settings - cannot determine trust status
-    error.throw "Failed to export trust settings - cannot determine trust status" 1
   fi
 
   # Filter trust settings for fingerprint key or integer 1/3
@@ -662,27 +578,15 @@ _ssl.add_cert_to_keychain_macos() {
   
   # Add certificate to keychain (with sudo if system keychain, without if login)
   if [[ "$keychain_type" == "system" ]]; then
-    if sudo security add-certificates -k "$keychain" "$cert_path" 2>/dev/null; then
-      log.info "✅ Certificate added to $keychain_name successfully"
-      return 0
+    if ! sudo security add-certificates -k "$keychain" "$cert_path" 2>&1; then
+      error.throw "Failed to add certificate to system keychain: $cert_path (requires sudo/admin privileges)" 1
     fi
-    # Fallback: try using import
-    if sudo security import "$cert_path" -k "$keychain" -T /usr/bin/security 2>/dev/null; then
-      log.info "✅ Certificate added to $keychain_name successfully"
-      return 0
-    fi
-    error.throw "Failed to add certificate to system keychain: $cert_path (requires sudo/admin privileges)" 1
+    log.info "✅ Certificate added to $keychain_name successfully"
   else
-    if security add-certificates -k "$keychain" "$cert_path" 2>/dev/null; then
-      log.info "✅ Certificate added to $keychain_name successfully"
-      return 0
+    if ! security add-certificates -k "$keychain" "$cert_path" 2>&1; then
+      error.throw "Failed to add certificate to login keychain: $cert_path" 1
     fi
-    # Fallback: try using import
-    if security import "$cert_path" -k "$keychain" -T /usr/bin/security 2>/dev/null; then
-      log.info "✅ Certificate added to $keychain_name successfully"
-      return 0
-    fi
-    error.throw "Failed to add certificate to login keychain: $cert_path" 1
+    log.info "✅ Certificate added to $keychain_name successfully"
   fi
 }
 
@@ -743,11 +647,11 @@ _ssl.remove_cert_from_keychain_macos() {
   fi
 
   if [[ ! -f "$cert_path" ]]; then
-    error.throw "Certificate file does not exist: $cert_path (skipping removal)" 1
+    error.throw "Certificate file does not exist: $cert_path" 1
   fi
 
   if ! command -v security >/dev/null 2>&1; then
-    error.throw "security command is not available (not on macOS?) - skipping removal" 1
+    error.throw "security command is not available (not on macOS?)" 1
   fi
 
   local keychain
@@ -766,41 +670,18 @@ _ssl.remove_cert_from_keychain_macos() {
   # Get SHA-1 fingerprint to uniquely identify this certificate
   local cert_fingerprint
   cert_fingerprint="$(_ssl.get_cert_fingerprint "$cert_path")"
-  
-  if [[ -z "$cert_fingerprint" ]]; then
-    log.warning "Could not extract certificate fingerprint, attempting removal by CN"
-    local cert_cn
-    cert_cn="$(_ssl.get_cert_cn "$cert_path")"
-    
-    if [[ "$keychain_type" == "system" ]]; then
-      if sudo security delete-certificate -c "$cert_cn" "$keychain" 2>/dev/null; then
-        log.info "✅ Certificate removed from $keychain_name successfully"
-        return 0
-      fi
-    else
-      if security delete-certificate -c "$cert_cn" "$keychain" 2>/dev/null; then
-        log.info "✅ Certificate removed from $keychain_name successfully"
-        return 0
-      fi
-    fi
-    log.debug "Certificate not found in keychain or already removed: $cert_cn"
-    return 0
-  fi
 
   if [[ "$keychain_type" == "system" ]]; then
-    if sudo security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>/dev/null; then
-      log.info "✅ Certificate removed from $keychain_name successfully"
-      return 0
+    if ! sudo security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>&1; then
+      error.throw "Failed to remove certificate from system keychain: $cert_path (fingerprint: ${cert_fingerprint:0:8}...)" 1
     fi
+    log.info "✅ Certificate removed from $keychain_name successfully"
   else
-    if security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>/dev/null; then
-      log.info "✅ Certificate removed from $keychain_name successfully"
-      return 0
+    if ! security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>&1; then
+      error.throw "Failed to remove certificate from login keychain: $cert_path (fingerprint: ${cert_fingerprint:0:8}...)" 1
     fi
+    log.info "✅ Certificate removed from $keychain_name successfully"
   fi
-  
-  log.debug "Certificate not found in keychain or already removed (fingerprint: ${cert_fingerprint:0:8}...)"
-  return 0
 }
 
 
@@ -890,26 +771,16 @@ _ssl.trust_cert_macos() {
   # Try to update trust settings for existing certificate
   # The -d flag allows updating trust settings for existing certificates
   if [[ "$keychain_type" == "system" ]]; then
-    if sudo security add-trusted-cert -d -r trustRoot -k "$keychain" "$cert_path" 2>/dev/null; then
-      log.info "✅ Certificate trusted successfully in $keychain_name"
-      return 0
+    if ! sudo security add-trusted-cert -d -r trustRoot -k "$keychain" "$cert_path" 2>&1; then
+      error.throw "Failed to trust certificate in system keychain: $cert_path" 1
     fi
-    
-  log.warning "Failed to set trust settings automatically"
-  log.info "   Certificate is in keychain but trust settings may not be configured"
-  log.info "   Please manually set trust in Keychain Access:"
-  if [[ "$keychain_type" == "system" ]]; then
-    log.info "   1. Open Keychain Access"
-    log.info "   2. Select 'System' keychain"
-    log.info "   3. Find the certificate and double-click it"
-    log.info "   4. Expand 'Trust' section and set to 'Always Trust'"
+    log.info "✅ Certificate trusted successfully in $keychain_name"
   else
-    log.info "   1. Open Keychain Access"
-    log.info "   2. Select 'login' keychain"
-    log.info "   3. Find the certificate and double-click it"
-    log.info "   4. Expand 'Trust' section and set to 'Always Trust'"
+    if ! security add-trusted-cert -d -r trustRoot -k "$keychain" "$cert_path" 2>&1; then
+      error.throw "Failed to trust certificate in login keychain: $cert_path" 1
+    fi
+    log.info "✅ Certificate trusted successfully in $keychain_name"
   fi
-  error.throw "Failed to trust certificate automatically - certificate exists but trust not configured. Please manually set trust in Keychain Access." 1
 }
 
 
@@ -943,19 +814,19 @@ _ssl.trust_cert_linux() {
   fi
 
   # Copy certificate to CA directory (requires sudo)
-  if ! sudo cp "$cert_path" "$ca_cert_path" 2>/dev/null; then
-    error.throw "Failed to copy certificate to CA directory (requires sudo): $ca_cert_path. Please run manually: sudo cp '$cert_path' '$ca_cert_path' && sudo update-ca-certificates" 1
+  if ! sudo cp "$cert_path" "$ca_cert_path" 2>&1; then
+    error.throw "Failed to copy certificate to CA directory (requires sudo): $ca_cert_path" 1
   fi
   
   log.info "Certificate copied to $ca_cert_path"
   
   # Update CA certificates
   if ! command -v update-ca-certificates >/dev/null 2>&1; then
-    error.throw "update-ca-certificates command not found. Please install it or manually update your CA bundle." 1
+    error.throw "update-ca-certificates command not found" 1
   fi
   
-  if ! sudo update-ca-certificates 2>/dev/null; then
-    error.throw "Failed to update CA certificates. Please run manually: sudo update-ca-certificates" 1
+  if ! sudo update-ca-certificates 2>&1; then
+    error.throw "Failed to update CA certificates" 1
   fi
   
   log.info "✅ Certificate trusted successfully in Linux CA bundle"
@@ -1005,11 +876,11 @@ _ssl.untrust_cert_macos() {
   fi
 
   if [[ ! -f "$cert_path" ]]; then
-    error.throw "Certificate file does not exist: $cert_path (skipping untrust)" 1
+    error.throw "Certificate file does not exist: $cert_path" 1
   fi
 
   if ! command -v security >/dev/null 2>&1; then
-    error.throw "security command is not available (not on macOS?) - skipping untrust" 1
+    error.throw "security command is not available (not on macOS?)" 1
   fi
 
   local keychain
@@ -1026,51 +897,22 @@ _ssl.untrust_cert_macos() {
   local cert_fingerprint
   cert_fingerprint="$(_ssl.get_cert_fingerprint "$cert_path")"
   
-  if [[ -z "$cert_fingerprint" ]]; then
-    log.warning "Could not extract certificate fingerprint, attempting removal by CN"
-    # Fallback to CN if fingerprint extraction fails
-    local cert_cn
-    cert_cn="$(_ssl.get_cert_cn "$cert_path")"
-    
-    log.info "Removing certificate from macOS $keychain_name: $cert_path (CN: $cert_cn)"
-    if [[ "$keychain_type" == "system" ]]; then
-      log.info "⚠️  This requires administrator privileges (sudo)"
+  log.info "Removing certificate from macOS $keychain_name: $cert_path (fingerprint: ${cert_fingerprint:0:8}...)"
+  if [[ "$keychain_type" == "system" ]]; then
+    log.info "⚠️  This requires administrator privileges (sudo)"
+  fi
+  
+  # Remove certificate from keychain by fingerprint
+  if [[ "$keychain_type" == "system" ]]; then
+    if ! sudo security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>&1; then
+      error.throw "Failed to remove certificate from system keychain: $cert_path (fingerprint: ${cert_fingerprint:0:8}...)" 1
     fi
-    
-    # Remove certificate from keychain by CN (ignore errors if not found)
-    if [[ "$keychain_type" == "system" ]]; then
-      if sudo security delete-certificate -c "$cert_cn" "$keychain" >/dev/null 2>&1; then
-        log.info "✅ Certificate untrusted successfully from $keychain_name"
-      else
-        log.debug "Certificate not found in keychain or already removed: $cert_cn"
-      fi
-    else
-      if security delete-certificate -c "$cert_cn" "$keychain" >/dev/null 2>&1; then
-        log.info "✅ Certificate untrusted successfully from $keychain_name"
-      else
-        log.debug "Certificate not found in keychain or already removed: $cert_cn"
-      fi
-    fi
+    log.info "✅ Certificate untrusted successfully from $keychain_name"
   else
-    log.info "Removing certificate from macOS $keychain_name: $cert_path (fingerprint: ${cert_fingerprint:0:8}...)"
-    if [[ "$keychain_type" == "system" ]]; then
-      log.info "⚠️  This requires administrator privileges (sudo)"
+    if ! security delete-certificate -Z "$cert_fingerprint" "$keychain" 2>&1; then
+      error.throw "Failed to remove certificate from login keychain: $cert_path (fingerprint: ${cert_fingerprint:0:8}...)" 1
     fi
-    
-    # Remove certificate from keychain by fingerprint (ignore errors if not found)
-    if [[ "$keychain_type" == "system" ]]; then
-      if sudo security delete-certificate -Z "$cert_fingerprint" "$keychain" >/dev/null 2>&1; then
-        log.info "✅ Certificate untrusted successfully from $keychain_name"
-      else
-        log.debug "Certificate not found in keychain or already removed (fingerprint: ${cert_fingerprint:0:8}...)"
-      fi
-    else
-      if security delete-certificate -Z "$cert_fingerprint" "$keychain" >/dev/null 2>&1; then
-        log.info "✅ Certificate untrusted successfully from $keychain_name"
-      else
-        log.debug "Certificate not found in keychain or already removed (fingerprint: ${cert_fingerprint:0:8}...)"
-      fi
-    fi
+    log.info "✅ Certificate untrusted successfully from $keychain_name"
   fi
 }
 
@@ -1090,8 +932,7 @@ _ssl.untrust_cert_linux() {
   fi
 
   if [[ ! -f "$cert_path" ]]; then
-    log.warning "Certificate file does not exist: $cert_path (skipping untrust)"
-    return 0
+    error.throw "Certificate file does not exist: $cert_path" 1
   fi
 
   local ca_cert_dir="/usr/local/share/ca-certificates"
@@ -1102,33 +943,30 @@ _ssl.untrust_cert_linux() {
   log.info "Removing certificate from Linux CA bundle: $cert_path"
 
   if [[ ! -d "$ca_cert_dir" ]]; then
-    error.throw "CA certificates directory does not exist: $ca_cert_dir (certificate may not be trusted)" 1
+    error.throw "CA certificates directory does not exist: $ca_cert_dir" 1
   fi
 
   # Remove certificate from CA directory (requires sudo)
-  if [[ -f "$ca_cert_path" ]]; then
-    if sudo rm -f "$ca_cert_path" 2>/dev/null; then
-      log.info "Certificate removed from $ca_cert_path"
-      
-      # Update CA certificates
-      if command -v update-ca-certificates >/dev/null 2>&1; then
-        if sudo update-ca-certificates 2>/dev/null; then
-          log.info "✅ Certificate untrusted successfully from Linux CA bundle"
-        else
-          log.warning "Failed to update CA certificates after removal"
-          log.info "You may need to run manually: sudo update-ca-certificates"
-        fi
-      else
-        log.warning "update-ca-certificates command not found"
-        log.info "You may need to manually update your CA bundle"
-      fi
-    else
-      log.warning "Failed to remove certificate from CA directory (requires sudo)"
-      log.info "You may need to run manually: sudo rm '$ca_cert_path'"
-    fi
-  else
-    log.debug "Certificate not found in CA bundle: $ca_cert_path (may not be trusted)"
+  if [[ ! -f "$ca_cert_path" ]]; then
+    error.throw "Certificate not found in CA bundle: $ca_cert_path" 1
   fi
+
+  if ! sudo rm -f "$ca_cert_path" 2>&1; then
+    error.throw "Failed to remove certificate from CA directory (requires sudo): $ca_cert_path" 1
+  fi
+  
+  log.info "Certificate removed from $ca_cert_path"
+  
+  # Update CA certificates
+  if ! command -v update-ca-certificates >/dev/null 2>&1; then
+    error.throw "update-ca-certificates command not found" 1
+  fi
+  
+  if ! sudo update-ca-certificates 2>&1; then
+    error.throw "Failed to update CA certificates" 1
+  fi
+  
+  log.info "✅ Certificate untrusted successfully from Linux CA bundle"
 }
 
 
