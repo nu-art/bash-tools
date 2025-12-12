@@ -302,6 +302,7 @@ ssl.generate_cert() {
           -keyout "$key_path" \
           -out "$cert_path" \
           -days "$days" \
+          -new \
           -nodes \
           -subj "/CN=$cn" \
           -reqexts SAN \
