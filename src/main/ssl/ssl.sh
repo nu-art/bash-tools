@@ -508,6 +508,12 @@ ssl.is_cert_trusted() {
     rm -f "$temp_trust_file"
     error.throw "Failed to export trust settings - cannot determine trust status" 1
   fi
+  
+  # Check if the cert fingerprint exists in the exported trust settings
+  if ! grep -q "key>$cert_fingerprint" "$temp_trust_file"; then
+    rm -f "$temp_trust_file"
+    return 1  # Fingerprint not found; not trusted
+  fi
 
   # Filter trust settings for fingerprint key or integer 1/3
   local filtered
