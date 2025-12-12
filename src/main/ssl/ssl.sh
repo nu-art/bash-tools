@@ -307,7 +307,7 @@ ssl.generate_cert() {
           -reqexts SAN \
           -extensions SAN \
           -config <(cat /System/Library/OpenSSL/openssl.cnf \
-            <(printf "[SAN]\nsubjectAltName=%s\nbasicConstraints=CA:TRUE\nkeyUsage=keyCertSign,cRLSign\n" "$san_string")) \
+            <(printf "[SAN]\nsubjectAltName=$san_string")) \
           -sha256 \
           2>&1)"
   local openssl_exit_code=$?
