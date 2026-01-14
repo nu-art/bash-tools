@@ -19,20 +19,42 @@ REMAINING_ARGS=()
 # Parse args
 while [[ $# -gt 0 ]]; do
   case $1 in
+    --sh-repo|-sh-r)
+      REPO="$2"
+      shift 2
+      ;;
+    --sh-bundle|-sh-b)
+      BUNDLE_NAMES+=("$2")
+      shift 2
+      ;;
+    --sh-version|-sh-v)
+      VERSION="$2"
+      shift 2
+      ;;
+    --sh-force|-sh-f)
+      FORCE_DOWNLOAD=true
+      shift
+      ;;
+
+# Bellow params will be deprecated in future versions
     --repo|-r)
       REPO="$2"
+      echo "avoid using --repo/-r, use --sh-repo/-sh-r instead"
       shift 2
       ;;
     --bundle|-b)
       BUNDLE_NAMES+=("$2")
+      echo "avoid using --bundle/-b, use --sh-bundle/-sh-b instead"
       shift 2
       ;;
     --version|-v)
       VERSION="$2"
+      echo "avoid using --version/-v, use --sh-version/-sh-v instead"
       shift 2
       ;;
     --force|-f)
       FORCE_DOWNLOAD=true
+      echo "avoid using --force/-f, use --sh-force/-sh-f instead"
       shift
       ;;
     *) # collect remaining
