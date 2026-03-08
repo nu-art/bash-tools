@@ -78,50 +78,17 @@ _ssl.get_cert_cn() {
 ssl.is_cert_expired_or_expiring() {
   local cert_path="$1"
   local days_threshold="${2:-30}"
-  
+
   if [[ ! -f "$cert_path" ]]; then
     return 0  # Consider missing cert as "expired" (needs regeneration)
   fi
-  
-  # Get certificate expiration date
-  local not_after
-  not_after="$(openssl x509 -in "$cert_path" -noout -enddate 2>&1 | cut -d= -f2)"
-  
-  if [[ -z "$not_after" ]]; then
-    error.throw "Failed to read certificate expiration date from: $cert_path. Certificate file may be corrupted or invalid." 1
+
+  # Use openssl -checkend to avoid cross-platform date parsing issues
+  local seconds_threshold=$((days_threshold * 86400))
+  if ! openssl x509 -in "$cert_path" -checkend "$seconds_threshold" -noout >/dev/null 2>&1; then
+    return 0  # expired or expiring within threshold
   fi
-  
-  # Convert expiration date to timestamp (handle both macOS and Linux date formats)
-  local expire_timestamp
-  if [[ "$(uname)" == "Darwin" ]]; then
-    # macOS date format
-    if ! expire_timestamp="$(date -j -f "%b %e %H:%M:%S %Y %Z" "$not_after" +%s 2>&1)"; then
-      error.throw "Failed to parse certificate expiration date: $not_after (from $cert_path). Certificate file may be corrupted or invalid." 1
-    fi
-  else
-    # Linux date format
-    if ! expire_timestamp="$(date -d "$not_after" +%s 2>&1)"; then
-      error.throw "Failed to parse certificate expiration date: $not_after (from $cert_path). Certificate file may be corrupted or invalid." 1
-    fi
-  fi
-  
-  if [[ -z "$expire_timestamp" ]]; then
-    error.throw "Failed to parse certificate expiration date: $not_after (from $cert_path). Certificate file may be corrupted or invalid." 1
-  fi
-  
-  # Get current timestamp
-  local current_timestamp
-  current_timestamp="$(date +%s)"
-  
-  # Calculate days until expiration
-  local days_until_expiry
-  days_until_expiry=$(( (expire_timestamp - current_timestamp) / 86400 ))
-  
-  # Return 0 (expired/expiring) if expired or within threshold
-  if [[ $days_until_expiry -lt $days_threshold ]]; then
-    return 0
-  fi
-  
+
   return 1  # Certificate is valid
 }
 
