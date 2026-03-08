@@ -67,7 +67,7 @@ _ssl.get_cert_cn() {
   echo "$cert_cn"
 }
 
-## @function: _ssl.is_cert_expired_or_expiring(cert_path, days_threshold?)
+## @function: ssl.is_cert_expired_or_expiring(cert_path, days_threshold?)
 ##
 ## @description: Checks if certificate is expired or will expire within the threshold
 ##
@@ -75,7 +75,7 @@ _ssl.get_cert_cn() {
 ## @param: $2 - Optional number of days before expiration to consider "expiring" (default: 30)
 ##
 ## @return: 0 if expired or expiring soon, 1 if valid
-_ssl.is_cert_expired_or_expiring() {
+ssl.is_cert_expired_or_expiring() {
   local cert_path="$1"
   local days_threshold="${2:-30}"
   
@@ -95,7 +95,7 @@ _ssl.is_cert_expired_or_expiring() {
   local expire_timestamp
   if [[ "$(uname)" == "Darwin" ]]; then
     # macOS date format
-    if ! expire_timestamp="$(date -j -f "%b %d %H:%M:%S %Y %Z" "$not_after" +%s 2>&1)"; then
+    if ! expire_timestamp="$(date -j -f "%b %e %H:%M:%S %Y %Z" "$not_after" +%s 2>&1)"; then
       error.throw "Failed to parse certificate expiration date: $not_after (from $cert_path). Certificate file may be corrupted or invalid." 1
     fi
   else
@@ -345,7 +345,7 @@ ssl.ensure_cert() {
   # Check if certificate files exist using building block API
   if ssl.has_cert "$cert_path" && [[ -f "$key_path" ]]; then
     # Check if certificate is expired or expiring soon (within 30 days)
-    if ! _ssl.is_cert_expired_or_expiring "$cert_path" 30; then
+    if ! ssl.is_cert_expired_or_expiring "$cert_path" 30; then
       log.debug "SSL certificate already exists and is valid: $cert_path"
       return 0
     fi
